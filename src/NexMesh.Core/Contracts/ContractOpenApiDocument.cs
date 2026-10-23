@@ -124,7 +124,7 @@ public static class ContractOpenApiDocument
 
         return new JsonObject
         {
-            ["openapi"] = "3.1.0",
+            ["openapi"] = "3.2.0",
             ["info"] = new JsonObject
             {
                 ["title"] = string.IsNullOrWhiteSpace(title) ? "NexMesh API" : title,
