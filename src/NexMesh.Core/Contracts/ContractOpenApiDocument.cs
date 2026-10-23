@@ -172,7 +172,7 @@ public static class ContractOpenApiDocument
             ["message"] = new JsonObject { ["type"] = "string" },
             ["data"] = dataSchema is not null
                 ? dataSchema
-                : new JsonObject { ["nullable"] = true, ["description"] = "空载荷" }, // 宽松写法,type:null 对 UI 渲染不友好
+                : new JsonObject { ["type"] = "object", ["nullable"] = true, ["description"] = "空载荷" }, // 带 type:无类型 schema 部分 UI 渲染不稳定
             ["traceId"] = new JsonObject { ["type"] = "string", ["nullable"] = true },
             ["timestamp"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
         },
@@ -296,25 +296,35 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         {
             return With(new JsonObject { ["type"] = "number", ["format"] = "double" });
         }
-        if (underlying == typeof(long) || underlying == typeof(ulong))
+        if (underlying == typeof(Half))
+        {
+            return With(new JsonObject { ["type"] = "number", ["format"] = "float" });
+        }
+        if (underlying == typeof(long) || underlying == typeof(nint))
         {
             return With(new JsonObject { ["type"] = "integer", ["format"] = "int64" });
         }
-        return With(new JsonObject
+        if (underlying == typeof(ulong) || underlying == typeof(nuint))
         {
-            ["type"] = underlying == typeof(bool) ? "boolean"
-                : underlying == typeof(string) || underlying == typeof(char) ? "string"
-                : "integer", // byte/sbyte/short/ushort/int/uint
-        });
+            return With(new JsonObject { ["type"] = "integer", ["format"] = "int64", ["minimum"] = 0 });
+        }
+        // 显式表:bool/string/char 与 uint(32 位无符号,防消费方按有符号解析溢出)/ushort 同理;其余小整型 integer
+        return underlying switch
+        {
+            _ when underlying == typeof(bool) => With(new JsonObject { ["type"] = "boolean" }),
+            _ when underlying == typeof(string) || underlying == typeof(char) => With(new JsonObject { ["type"] = "string" }),
+            _ when underlying == typeof(uint) || underlying == typeof(ushort) => With(new JsonObject { ["type"] = "integer", ["format"] = "int32", ["minimum"] = 0 }),
+            _ => With(new JsonObject { ["type"] = "integer" }), // byte/sbyte/short/int
+        };
     }
 
-    /// <summary>CLR 类型 → schema:字典→additionalProperties;集合→array;复杂对象→属性递归(字段中文注释);基元/枚举/日期→简单 schema。</summary>
+    /// <summary>CLR 类型 → schema:字典(含 KeyValuePair 序列)→additionalProperties;集合→array;复杂对象→属性递归(字段中文注释+required);基元/枚举/日期→简单 schema。</summary>
     public JsonObject Of(Type type, int depth)
     {
         var underlying = Nullable.GetUnderlyingType(type) ?? type;
         if (IsSimple(underlying))
         {
-            return Simple(type); // 含枚举/日期/Guid/基元
+            return Simple(type); // 含枚举/日期/Guid/基元/Half
         }
         if (depth >= MaxDepth)
         {
@@ -329,6 +339,32 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
                 ["additionalProperties"] = Of(dictValue, depth + 1),
                 ["description"] = "字典",
                 ["nullable"] = true,
+            };
+        }
+        // IEnumerable<KeyValuePair<,>> / KeyValuePair<,>[] 形式的字典序列:同样收敛为 map schema(而非 key/value 对象数组)
+        if (IsKeyValuePairEnumerable(underlying))
+        {
+            var valueType = GetKeyValuePairType(underlying)!.GetGenericArguments()[1];
+            return new JsonObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = Of(valueType, depth + 1),
+                ["description"] = "字典(KeyValuePair 序列)",
+                ["nullable"] = true,
+            };
+        }
+        // KeyValuePair<,> 本身:显式 key/value 对象(不落属性递归,避免误导)
+        if (underlying.IsGenericType && underlying.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+        {
+            var args = underlying.GetGenericArguments();
+            return new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["key"] = Of(args[0], depth + 1),
+                    ["value"] = Of(args[1], depth + 1),
+                },
             };
         }
         if (underlying.IsArray || IsEnumerable(underlying))
@@ -350,9 +386,11 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         {
             return cached is JsonObject shallow ? DeepClone(shallow) : cached; // 深拷贝防止共享节点跨 paths 变异
         }
-        _cache[underlying] = new JsonObject { ["type"] = "object", ["description"] = TypeName(underlying) }; // 先占位防循环
+        // 先占位防循环:循环引用命中时消费方拿到此占位——描述标注"有意截断"
+        _cache[underlying] = new JsonObject { ["type"] = "object", ["description"] = $"{TypeName(underlying)}(循环引用截断)" };
 
         var properties = new JsonObject();
+        var required = new List<string>();
         // XML 注释键用泛型定义名(NexMesh.PagedResult`1)——构造泛型的 FullName 带程序集限定,无法直配
         var typeKey = underlying.IsGenericType
             ? underlying.GetGenericTypeDefinition().FullName
@@ -366,6 +404,11 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
                 propSchema["description"] = propSummary; // 字段中文注释(XML P: 注释)
             }
             properties[ToCamelCase(prop.Name)] = propSchema;
+            // required:非可空值类型(引用类型的可空性运行时不可知,保守不标)
+            if (prop.PropertyType.IsValueType && Nullable.GetUnderlyingType(prop.PropertyType) is null)
+            {
+                required.Add(ToCamelCase(prop.Name));
+            }
         }
         var schema = new JsonObject
         {
@@ -375,6 +418,10 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
                 : TypeName(underlying),
             ["properties"] = properties,
         };
+        if (required.Count > 0)
+        {
+            schema["required"] = new JsonArray(required.Select(r => (JsonNode)r).ToArray());
+        }
         _cache[underlying] = schema;
         return DeepClone(schema);
     }
@@ -413,8 +460,8 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         }
         if (underlying.IsArray || IsEnumerable(underlying))
         {
-            var element = GetElementType(underlying);
-            return new JsonArray(Example(element, depth + 1));
+            // 空数组示例:体现"集合可能为空"(不再给 [示例值] 误导必有元素);字段名仍保留
+            return new JsonArray();
         }
         if (GetDictionaryValueType(underlying) is { } dictValue)
         {
@@ -438,7 +485,31 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
 
     private static bool IsSimple(Type type) =>
         type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)
-        || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type == typeof(Guid) || type == typeof(char);
+        || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type == typeof(Guid) || type == typeof(char)
+        || type == typeof(Half); // Half 非 IsPrimitive,漏收会掉对象分支按属性展开
+
+    /// <summary>KeyValuePair 序列识别:IEnumerable&lt;KeyValuePair&lt;,&gt;&gt; 或 KeyValuePair&lt;,&gt;[](不含 IDictionary——已被上一分支接管)。</summary>
+    private static bool IsKeyValuePairEnumerable(Type type) => GetKeyValuePairType(type) is not null;
+
+    private static Type? GetKeyValuePairType(Type type)
+    {
+        if (type.IsArray && type.GetElementType() is { } arrayElement
+            && arrayElement.IsGenericType
+            && arrayElement.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+        {
+            return arrayElement;
+        }
+        if (!type.IsGenericType)
+        {
+            return null;
+        }
+        return type.GetInterfaces().Append(type)
+            .FirstOrDefault(i => i.IsGenericType
+                && i.GetGenericTypeDefinition() == typeof(IEnumerable<>)
+                && i.GetGenericArguments()[0] is { IsGenericType: true } element
+                && element.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+            ?.GetGenericArguments()[0];
+    }
 
     /// <summary>字典接口值类型:实现 IDictionary&lt;,&gt;/IReadOnlyDictionary&lt;,&gt; 视为字典(含 Dictionary/ConcurrentDictionary 等)。</summary>
     private static Type? GetDictionaryValueType(Type type)
