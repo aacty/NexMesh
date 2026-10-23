@@ -2,8 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [master, main]
   pull_request:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
 
 jobs:
   build-test:
@@ -12,7 +16,7 @@ jobs:
     services:
       redis:
         image: redis:7-alpine
-        ports: [ "6379:6379" ]
+        ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -23,19 +27,23 @@ jobs:
       NEXMESH_TEST_REDIS: 127.0.0.1:6379
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Restore
         run: dotnet restore NexMesh.slnx
 
-      - name: Build
+      - name: Build (zero warnings)
         run: dotnet build NexMesh.slnx -c Release --no-restore
 
-      - name: Test(含真实 Redis 集成)
+      - name: Test (129 tests incl. Redis integration)
         run: dotnet test NexMesh.slnx -c Release --no-build
+
+      - name: Pack (verify packable)
+        run: dotnet pack NexMesh.slnx -c Release -o ./packages --no-build
+
+      - name: List artifacts
+        run: ls ./packages/*.nupkg

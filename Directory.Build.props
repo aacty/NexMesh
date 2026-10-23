@@ -11,24 +11,30 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
   </PropertyGroup>
 
-  <!-- 包元数据:NexMesh v2.0-ai 全新基线(Green-field) -->
+  <!-- 包元数据:统一继承,所有包可独立发布到 NuGet -->
   <PropertyGroup>
-    <!-- 版本策略:v2.0 AI 增强版,预发布期 2.0.0-alpha,里程碑发布时去后缀 -->
-    <Version>2.0.0-alpha.1</Version>
+    <!-- 版本策略:0.0.x 开发期,里程碑时升 1.0 -->
+    <Version>0.0.1-alpha.1</Version>
     <Authors>NexMesh Team</Authors>
     <Product>NexMesh</Product>
-    <Copyright>Copyright © NexMesh Team</Copyright>
-    <RepositoryUrl>https://gitee.com/520vip/NexMesh</RepositoryUrl>
+    <Copyright>Copyright © NexMesh Team 2026</Copyright>
+    <RepositoryUrl>https://github.com/aacty/NexMesh</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://gitee.com/520vip/NexMesh</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/aacty/NexMesh</PackageProjectUrl>
     <PackageTags>NexMesh;dotNET;ASP.NET Core;AI;Microsoft.Extensions.AI;FreeSql;Minimal API</PackageTags>
     <!-- 调试友好:包里嵌入源码,使用方 F12 可直接看到框架源码 -->
     <EmbedAllSources>true</EmbedAllSources>
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- NuGet 发布配置 -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
 </Project>

@@ -71,7 +71,7 @@ public class OrderService(IFreeSql db, IRepository<Order> repo)
 
 ```bash
 # 克隆并运行（零配置，内置 SQLite + Stub LLM）
-git clone https://gitee.com/520vip/NexMesh.git
+git clone https://github.com/aacty/NexMesh.git
 cd NexMesh/samples/NexMesh.AiDemo
 dotnet run
 ```
