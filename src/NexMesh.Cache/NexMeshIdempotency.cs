@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using NexMesh.Core.Models;
 
 /// <summary>
 /// 幂等防重中间件:携带 Idempotency-Key 头的写请求,同 Key 并发重复立即 409(40901)——
@@ -35,7 +34,7 @@ public class IdempotencyMiddleware
             context.Response.StatusCode = StatusCodes.Status409Conflict;
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsync(JsonSerializer.Serialize(
-                ApiResult<object>.Fail(40901, "重复请求处理中(Idempotency-Key 冲突)")));
+                ApiResult<object>.Fail("重复请求处理中(Idempotency-Key 冲突)", 409), JsonSerializerOptions.Web));
             return;
         }
 

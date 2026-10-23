@@ -17,11 +17,11 @@ public class GatewayAuthTests : IAsyncLifetime
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
-        builder.Services.AddScoped<CrudApiService>();
+        builder.Services.AddNexMeshContracts(typeof(CrudApiService).Assembly);
         // 不设 AllowAnonymousByDefault → 默认拒绝
         _app = builder.Build();
         _app.UseNexMeshExceptionHandling();
-        _app.MapAutoApiGateway(typeof(CrudApiService).Assembly);
+        _app.MapNexMeshContractGateway(typeof(CrudApiService).Assembly);
         await _app.StartAsync();
         _client = _app.GetTestClient();
     }
@@ -31,10 +31,10 @@ public class GatewayAuthTests : IAsyncLifetime
     [Fact]
     public async Task 未标注AllowAnonymous的端点_匿名访问401()
     {
-        var response = await _client.PostAsync("/api/demo/getlistasync", content: null);
+        var response = await _client.PostAsync("/api/Demo/GetList", content: null);
 
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Contains("40101", await response.Content.ReadAsStringAsync());
+        Assert.Contains("\"code\":401", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

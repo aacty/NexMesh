@@ -1,13 +1,19 @@
 namespace NexMesh.Host.Tests;
 
 using FreeSql;
+using NexMesh;
 using NexMesh.AI.Tools;
-using NexMesh.Core.AutoApi;
 using NexMesh.Core.DependencyInjection;
 
-/// <summary>宿主端到端夹具:业务开发者视角的全部产出——只有业务类 + 工具方法,零框架装配代码。</summary>
-[ServiceRoute("api/host-demo")]
-public class HostDemoService : IAutoApi, IScopedService
+/// <summary>宿主端到端夹具:业务开发者视角的全部产出——只有契约接口 + 业务实现 + 工具方法,零框架装配代码。</summary>
+public interface IHostDemoApi : IServiceApi
+{
+    Task<string> PingAsync();
+
+    Task<long> CountAsync();
+}
+
+public class HostDemoService : IHostDemoApi, IScopedService
 {
     private readonly IFreeSql _db;
 

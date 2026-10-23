@@ -1,13 +1,14 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using NexMesh.Core.AutoApi;
+using NexMesh;
 using NexMesh.Core.DependencyInjection;
 using NexMesh.Toolbox;
 
 namespace NexMesh.AiDemo.Services;
 
 /// <summary>文件服务:IFormFile 直绑上传 → DB Blob 持久化(IFileStorage)→ 特性路由下载。</summary>
-public interface IFileBiz : IAutoApi
+[ApiContract("file")]
+public interface IFileBiz : IServiceApi
 {
     Task<string> UploadAsync(IFormFile file);
 
@@ -15,7 +16,6 @@ public interface IFileBiz : IAutoApi
     Task<IActionResult> DownloadAsync(string id);
 }
 
-[ServiceRoute("api/file")]
 public class FileService(IFileStorage storage) : IFileBiz, IScopedService
 {
     public async Task<string> UploadAsync(IFormFile file)

@@ -1,65 +1,132 @@
 namespace NexMesh.Core.Tests.Fixtures;
 
 using Microsoft.AspNetCore.Mvc;
-using NexMesh.Core;
-using NexMesh.Core.AutoApi;
-using NexMesh.Core.Models;
+using NexMesh;
 
-/// <summary>AutoApi 测试夹具:覆盖无参映射/简单参数 Query 绑定/同步返回/非泛型 Task 四种形态。</summary>
-[ServiceRoute("api/demo")]
-public class DemoApiService : IAutoApi
+/// <summary>契约端点测试夹具:覆盖无模板方法名路由/简单参数 Query 绑定/同步返回/非泛型 Task 四种形态。</summary>
+public interface IDemoApi : IServiceApi
+{
+    Task<List<int>> GetListAsync();
+
+    // 简单参数:默认 POST 子路由(api/Demo/Get)+ Query 绑定
+    Task<int> GetAsync(int id);
+
+    string Ping();
+
+    // 非泛型 Task:空载荷成功信封(200 + code=0)
+    Task ResetAsync();
+}
+
+public class DemoApiService : IDemoApi
 {
     public Task<List<int>> GetListAsync() => Task.FromResult(new List<int> { 1, 2, 3 });
 
-    // 简单参数:默认 POST 子路由 + Query 绑定
     public Task<int> GetAsync(int id) => Task.FromResult(id);
 
     public string Ping() => "pong";
 
-    // 非泛型 Task:无返回值 → 204
     public Task ResetAsync() => Task.CompletedTask;
 }
 
-/// <summary>AutoApi 参数绑定测试夹具:路由参数/Body/混合绑定/分页 Query/动词特性。</summary>
-[ServiceRoute("api/crud")]
-public class CrudApiService : IAutoApi
+/// <summary>契约参数绑定夹具:路由参数/Body/混合绑定/分页/动词特性。</summary>
+public interface ICrudApi : IServiceApi
 {
-    public record ItemDto(string Name, int Qty);
+    record ItemDto(string Name, int Qty);
 
     [HttpGet("{id}")]
-    public Task<string> GetAsync(long id) => Task.FromResult($"item-{id}");
+    Task<string> GetAsync(long id);
 
     [HttpPost]
-    public Task<ItemDto> CreateAsync(ItemDto dto) => Task.FromResult(dto);
+    Task<ItemDto> CreateAsync(ItemDto dto);
 
     [HttpPut("{id}")]
-    public Task<string> UpdateAsync(long id, ItemDto dto) => Task.FromResult($"item-{id}:{dto.Name}");
+    Task<string> UpdateAsync(long id, ItemDto dto);
 
     [HttpDelete("{id}")]
-    public Task<bool> DeleteAsync(long id) => Task.FromResult(true);
+    Task<bool> DeleteAsync(long id);
 
     // 默认 POST + Query 绑定 + 可缺省参数默认值
-    public Task<PagedData<string>> SearchAsync(string? keyWords, int pageIndex = 1, int pageSize = 20)
-        => Task.FromResult(new PagedData<string> { Total = pageIndex, Items = [keyWords ?? "all"] });
+    Task<PagedResult<string>> SearchAsync(string? keyword, int pageIndex = 1, int pageSize = 20);
+}
+
+public class CrudApiService : ICrudApi
+{
+    public Task<string> GetAsync(long id) => Task.FromResult($"item-{id}");
+
+    public Task<ICrudApi.ItemDto> CreateAsync(ICrudApi.ItemDto dto) => Task.FromResult(dto);
+
+    public Task<string> UpdateAsync(long id, ICrudApi.ItemDto dto) => Task.FromResult($"item-{id}:{dto.Name}");
+
+    public Task<bool> DeleteAsync(long id) => Task.FromResult(true);
+
+    public Task<PagedResult<string>> SearchAsync(string? keyword, int pageIndex = 1, int pageSize = 20)
+        => Task.FromResult(new PagedResult<string>
+        {
+            TotalCount = pageIndex,
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            Items = [keyword ?? "all"],
+        });
 }
 
 /// <summary>异常中间件测试夹具:业务异常 vs 未知异常。</summary>
-[ServiceRoute("api/throw")]
-public class ThrowingApiService : IAutoApi
+public interface IThrowApi : IServiceApi
+{
+    Task BizAsync();
+
+    Task BoomAsync();
+}
+
+public class ThrowingApiService : IThrowApi
 {
     public Task BizAsync() => throw new MeshException("金额必须大于 0", 40002, 400);
 
     public Task BoomAsync() => throw new InvalidOperationException("boom");
 }
 
-/// <summary>未标注 [ServiceRoute] 的夹具:验证 api/{类名小写} 默认路由规则。</summary>
-public class PlainApiService : IAutoApi
+/// <summary>异常族语义夹具:BusinessException 暴露消息 / InfrastructureException 不暴露。</summary>
+public interface IExceptionFamilyApi : IServiceApi
+{
+    [HttpPost("business")]
+    Task BizFamilyAsync();
+
+    [HttpPost("not-found")]
+    Task MissingAsync();
+
+    [HttpPost("infra")]
+    Task InfraAsync();
+
+    [HttpPost("validation")]
+    Task InvalidAsync();
+}
+
+public class ExceptionFamilyService : IExceptionFamilyApi
+{
+    public Task BizFamilyAsync() => throw new BusinessException("账号不能为空");
+
+    public Task MissingAsync() => throw new NotFoundException("工单 42 不存在");
+
+    public Task InfraAsync() => throw new InfrastructureException("数据库连接串泄漏风险细节");
+
+    public Task InvalidAsync() => throw new ValidationException("字段校验失败", new Dictionary<string, string[]>
+    {
+        ["userName"] = ["必填", "长度 2-32"],
+    });
+}
+
+/// <summary>接口名不带 Api 后缀的夹具:IPlainApi → 服务名 Plain → api/Plain/Count。</summary>
+public interface IPlainApi : IServiceApi
+{
+    Task<int> CountAsync();
+}
+
+public class PlainApiService : IPlainApi
 {
     public Task<int> CountAsync() => Task.FromResult(7);
 }
 
-/// <summary>接口声明 [Http*] 特性的夹具:特性应沿 InterfaceMap 上溯生效(业务契约的标准形态)。</summary>
-public interface IWidgetBiz : IAutoApi
+/// <summary>路由模板含参数约束的夹具(业务契约的标准形态)。</summary>
+public interface IWidgetBiz : IServiceApi
 {
     [HttpGet("{code}")]
     Task<string> FindAsync(string code);
@@ -69,4 +136,3 @@ public class WidgetService : IWidgetBiz
 {
     public Task<string> FindAsync(string code) => Task.FromResult($"widget-{code}");
 }
-

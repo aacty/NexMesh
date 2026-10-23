@@ -12,4 +12,8 @@
     <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
 </Project>

@@ -5,7 +5,6 @@ using System.Reflection;
 using FreeSql;
 using Microsoft.Extensions.DependencyInjection;
 using NexMesh.Core;
-using NexMesh.Core.Models;
 
 /// <summary>
 /// 仓储:实体实现约定接口即自动接管——
@@ -22,7 +21,7 @@ public interface IRepository<T> where T : class
     Task<bool> SoftDeleteAsync(object id, CancellationToken ct = default);
     Task<long> CountAsync(Expression<Func<T, bool>>? where = null, CancellationToken ct = default);
     Task<List<T>> ListAsync(Expression<Func<T, bool>>? where = null, CancellationToken ct = default);
-    Task<PagedData<T>> PagedAsync(int pageIndex, int pageSize, Expression<Func<T, bool>>? where = null, CancellationToken ct = default);
+    Task<PagedResult<T>> PagedAsync(int pageIndex, int pageSize, Expression<Func<T, bool>>? where = null, CancellationToken ct = default);
 }
 
 public sealed class Repository<T>(IDbFactory dbFactory, ICurrentUser? user) : IRepository<T> where T : class
@@ -104,13 +103,13 @@ public sealed class Repository<T>(IDbFactory dbFactory, ICurrentUser? user) : IR
     public Task<List<T>> ListAsync(Expression<Func<T, bool>>? where = null, CancellationToken ct = default) =>
         where is null ? Db.Select<T>().ToListAsync(ct) : Db.Select<T>().Where(where).ToListAsync(ct);
 
-    public async Task<PagedData<T>> PagedAsync(
+    public async Task<PagedResult<T>> PagedAsync(
         int pageIndex, int pageSize, Expression<Func<T, bool>>? where = null, CancellationToken ct = default)
     {
         var query = where is null ? Db.Select<T>() : Db.Select<T>().Where(where);
         var total = await query.CountAsync(ct);
         var items = await query.Page(pageIndex, pageSize).ToListAsync(ct);
-        return new PagedData<T> { Total = total, Items = items };
+        return new PagedResult<T> { TotalCount = total, Items = items, PageIndex = pageIndex, PageSize = pageSize };
     }
 
     private void FillCreate(T entity)

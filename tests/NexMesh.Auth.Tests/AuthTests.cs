@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 using NexMesh.AI.Approval;
 using NexMesh.AI; // AddNexMeshAi
 using NexMesh.Core;
-using NexMesh.Core.AutoApi;
+using NexMesh;
 using NexMesh.Core.DependencyInjection;
 using NexMesh.Host; // UseNexMeshService
 
@@ -25,26 +25,24 @@ public class AuthTests : IAsyncLifetime
 
     public static int SlidingTouches;
 
-    /// <summary>受保护业务接口:实现类标注 [Authorize](C# 限制:该特性不能标接口)。</summary>
-    public interface ISecretBiz : IAutoApi
+    /// <summary>受保护业务接口:[Authorize] 标在接口方法上(契约引擎读取)。</summary>
+    public interface ISecretBiz : IServiceApi
     {
         Task<string> WhoAsync();
     }
 
-    public interface IProtectedBiz : IAutoApi
+    public interface IProtectedBiz : IServiceApi
     {
+        [Microsoft.AspNetCore.Authorization.Authorize]
         Task<string> ProtectedAsync();
     }
 
-    [ServiceRoute("api/secret")]
     public class SecretService(ICurrentUser user) : ISecretBiz, IScopedService
     {
         public Task<string> WhoAsync() =>
             Task.FromResult($"{user.UserId}|{user.UserName}|{user.TenantId}|auth={user.IsAuthenticated}");
     }
 
-    [Microsoft.AspNetCore.Authorization.Authorize]
-    [ServiceRoute("api/protected")]
     public class ProtectedService : IProtectedBiz, IScopedService
     {
         public Task<string> ProtectedAsync() => Task.FromResult("protected-ok");
@@ -118,7 +116,7 @@ public class AuthTests : IAsyncLifetime
         var token = await LoginAsync();
         Assert.NotNull(token);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/secret/whoasync");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/secretbiz/who");
         request.Headers.Authorization = new("Bearer", token);
         var response = await _client.SendAsync(request);
 
@@ -136,18 +134,18 @@ public class AuthTests : IAsyncLifetime
             new StringContent("""{"username":"doctor","password":"wrong"}""", Encoding.UTF8, "application/json"));
 
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Contains("40102", await response.Content.ReadAsStringAsync());
+        Assert.Contains("\"code\":401", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
     public async Task 受保护AutoApi_无Token拒绝_有效Token放行()
     {
         // 接口标注 [Authorize] → 端点受保护
-        var anonymous = await _client.PostAsync("/api/protected/protectedasync", content: null);
+        var anonymous = await _client.PostAsync("/api/protectedbiz/protected", content: null);
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, anonymous.StatusCode);
 
         var token = await LoginAsync();
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/protected/protectedasync");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/protectedbiz/protected");
         request.Headers.Authorization = new("Bearer", token);
         var response = await _client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
@@ -158,12 +156,12 @@ public class AuthTests : IAsyncLifetime
     [Fact]
     public async Task 无效与伪造Token_统一401()
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/secret/whoasync");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/secretbiz/who");
         request.Headers.Authorization = new("Bearer", "forged-token-value");
         var response = await _client.SendAsync(request);
 
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Contains("40101", await response.Content.ReadAsStringAsync());
+        Assert.Contains("\"code\":401", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -174,7 +172,7 @@ public class AuthTests : IAsyncLifetime
         logout.Headers.Authorization = new("Bearer", token);
         Assert.True((await _client.SendAsync(logout)).IsSuccessStatusCode);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/secret/whoasync");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/secretbiz/who");
         request.Headers.Authorization = new("Bearer", token);
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, (await _client.SendAsync(request)).StatusCode);
     }

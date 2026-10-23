@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using NexMesh.Core.Models;
 
 /// <summary>NexMesh 审批门注册与审批中心端点。</summary>
 public static class NexMeshApprovalExtensions
@@ -44,7 +43,7 @@ public static class NexMeshApprovalExtensions
         {
             var request = await store.GetAsync(id);
             return request is null
-                ? Results.NotFound(ApiResult<object>.Fail(40401, $"审批单 {id} 不存在"))
+                ? Results.NotFound(ApiResult<object>.Fail($"审批单 {id} 不存在", 404))
                 : Results.Ok(ApiResult<ApprovalRequest>.Ok(request));
         });
 

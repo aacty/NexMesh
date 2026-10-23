@@ -24,7 +24,14 @@ public sealed record LoginUser(
     string UserId,
     string? UserName = null,
     string? TenantId = null,
-    IReadOnlyDictionary<string, string>? Claims = null);
+    IReadOnlyDictionary<string, string>? Claims = null)
+{
+    /// <summary>多值声明(如多个 Role):Claims 字典无法承载同类型多条,列表补充;null 时行为不变。</summary>
+    public IReadOnlyList<TokenClaim>? ClaimList { get; init; }
+}
+
+/// <summary>序列化安全的声明条目(Type/Value 键值对)。</summary>
+public sealed record TokenClaim(string Type, string Value);
 
 /// <summary>
 /// 业务登录验证扩展点:业务项目实现并注册(用户名密码校验、扫码、短信等均由此接入)。
@@ -43,6 +50,10 @@ public sealed record TokenSession
     public string? UserName { get; init; }
     public string? TenantId { get; init; }
     public IReadOnlyDictionary<string, string> Claims { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>多值声明(如多个 Role);存在时认证处理器以其为权威来源。null 时行为不变。</summary>
+    public IReadOnlyList<TokenClaim>? ClaimList { get; init; }
+
     public DateTime IssuedAt { get; init; } = DateTime.Now;
     public DateTime ExpiresAt { get; init; }
     public DateTime LastActivityAt { get; init; } = DateTime.Now;
@@ -50,7 +61,7 @@ public sealed record TokenSession
 }
 
 /// <summary>会话存储:内存默认(Redis 实现随缓存包交付,接口不变)。</summary>
-public interface ITokenStore
+public interface ISessionStore
 {
     Task SaveAsync(TokenSession session);
     Task<TokenSession?> GetAsync(string token);
@@ -58,7 +69,7 @@ public interface ITokenStore
 }
 
 /// <summary>内存会话存储(单实例部署/开发/测试;多实例集群用 Redis 实现)。</summary>
-public sealed class MemoryTokenStore : ITokenStore
+public sealed class MemorySessionStore : ISessionStore
 {
     private readonly ConcurrentDictionary<string, TokenSession> _sessions = new(StringComparer.Ordinal);
     private int _opsSinceSweep;
@@ -112,7 +123,7 @@ public sealed class MemoryTokenStore : ITokenStore
 }
 
 /// <summary>不透明 Token 签发与滑动续期。</summary>
-public sealed class NexMeshTokenService(ITokenStore store, Microsoft.Extensions.Options.IOptions<NexMeshAuthOptions> options)
+public sealed class NexMeshTokenService(ISessionStore store, Microsoft.Extensions.Options.IOptions<NexMeshAuthOptions> options)
 {
     private readonly NexMeshAuthOptions _options = options.Value;
     public async Task<TokenSession> IssueAsync(LoginUser user)
@@ -125,6 +136,7 @@ public sealed class NexMeshTokenService(ITokenStore store, Microsoft.Extensions.
             UserName = user.UserName,
             TenantId = user.TenantId,
             Claims = user.Claims ?? new Dictionary<string, string>(),
+            ClaimList = user.ClaimList,
             IssuedAt = now,
             ExpiresAt = now.AddMinutes(_options.AccessTokenExpireMinutes),
         };

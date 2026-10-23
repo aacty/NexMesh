@@ -4,10 +4,10 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using NexMesh.Core.Models;
 
 /// <summary>
-/// 全局异常中间件:X-Trace-Id 响应头 + MeshException 业务码/状态码透传,未知异常统一 500;
+/// 全局异常中间件:X-Trace-Id 响应头 + 异常族→HTTP 状态码映射,统一 ApiResult 信封错误体
+/// (success=false/code=HTTP状态码/message;InfrastructureException 及未知异常不暴露内部消息)。
 /// 响应已开始(SSE 流式等)时优雅收尾而非改写响应头造成二次崩溃。
 /// </summary>
 public class MeshExceptionMiddleware
@@ -32,25 +32,20 @@ public class MeshExceptionMiddleware
         }
         catch (MeshException ex) when (!context.Response.HasStarted)
         {
-            context.Response.ContentType = "application/json";
-            context.Response.StatusCode = ex.StatusCode;
+            _logger.LogWarning(ex, "业务异常 {TraceId} {Method} {Path} -> {StatusCode}",
+                traceId, context.Request.Method, context.Request.Path, ex.StatusCode);
 
-            var result = ApiResult<object>.Fail(ex.ErrorCode, ex.Message);
-            await context.Response.WriteAsync(JsonSerializer.Serialize(result));
+            await WriteErrorAsync(context, BuildError(ex, traceId));
         }
         catch (Exception ex) when (!context.Response.HasStarted
                                    && ex is not OperationCanceledException)
         {
-            // SSS+安全审查修复:500 不向客户端暴露 ex.Message(可含 SQL/连接串细节);
-            // 统一 50000 业务码;详细异常仅入日志(带 TraceId)
+            // SSS+安全:500 不向客户端暴露 ex.Message(可含 SQL/连接串细节);
+            // 详细异常仅入日志(带 TraceId)
             _logger.LogError(ex, "未处理异常 {TraceId} {Method} {Path}",
                 traceId, context.Request.Method, context.Request.Path);
 
-            context.Response.ContentType = "application/json";
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-
-            var result = ApiResult<object>.Fail(50000, $"服务器内部错误(TraceId:{traceId})");
-            await context.Response.WriteAsync(JsonSerializer.Serialize(result));
+            await WriteErrorAsync(context, ApiResult.Fail($"服务器内部错误(TraceId:{traceId})", 500));
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -69,5 +64,28 @@ public class MeshExceptionMiddleware
                 // 连接已断开,无需收尾
             }
         }
+    }
+
+    /// <summary>异常 → 错误信封:Code=HTTP 状态码;不可暴露的消息替换为通用文案;Validation 附 Errors。</summary>
+    internal static ApiResult BuildError(MeshException ex, string traceId)
+    {
+        var message = ex.ShouldExposeMessage
+            ? ex.Message
+            : $"服务器内部错误(TraceId:{traceId})";
+        var error = ApiResult.Fail(message, ex.StatusCode);
+        error.TraceId = traceId;
+        if (ex is ValidationException { Errors.Count: > 0 } validation)
+        {
+            error.Errors = validation.Errors;
+        }
+        return error;
+    }
+
+    private static async Task WriteErrorAsync(HttpContext context, ApiResult error)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = error.Code;
+        await context.Response.WriteAsync(
+            JsonSerializer.Serialize(error, JsonSerializerOptions.Web));
     }
 }

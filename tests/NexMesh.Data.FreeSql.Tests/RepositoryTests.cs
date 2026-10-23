@@ -172,7 +172,56 @@ public class RepositoryTests
 
         var page2 = await repo.PagedAsync(pageIndex: 2, pageSize: 10);
 
-        Assert.Equal(25, page2.Total);
+        Assert.Equal(25, page2.TotalCount);
         Assert.Equal(10, page2.Items.Count);
+    }
+}
+
+/// <summary>类型化数据源与 ID 生成器(对齐约定表面)。</summary>
+public class DbSourceContractTests
+{
+    [Fact]
+    public void AddDBSource_类型化注册_注入标记实例()
+    {
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+        var mb = new NexMesh.Core.NexMeshBuilder(services, config);
+        mb.AddDBSource<MarkerDbA>(new NexMesh.Data.FreeSqlDBOptions
+        {
+            DataType = global::FreeSql.DataType.Sqlite,
+            ConnectionString = $"Data Source=dsrc-{Guid.NewGuid():N}.db;",
+            AutoSyncStructure = true,
+        });
+
+        var provider = services.BuildServiceProvider();
+        var source = provider.GetRequiredService<MarkerDbA>();
+
+        Assert.NotNull(source);
+        Assert.NotNull(source.SqlClient); // IFreeSql<MarkerDbA>(FreeSql 原生多库标记)
+        Assert.True(provider.GetRequiredService<global::IFreeSql<MarkerDbA>>() is not null);
+    }
+
+    [Fact]
+    public void IIdGenerator_雪花与字符串形态()
+    {
+        var generator = new NexMesh.Data.NexMeshIdGenerator();
+        var id1 = generator.NextSnowflakeId();
+        var id2 = generator.NextId();
+        var str = generator.NextSnowflakeString();
+
+        Assert.True(id1 > 0);
+        Assert.True(id2 > 0);
+        Assert.NotEqual(id1, id2);
+        var next = generator.NextString();
+        Assert.False(string.IsNullOrWhiteSpace(next));
+        Assert.True(long.TryParse(next, out _));
+        Assert.False(string.IsNullOrWhiteSpace(str));
+    }
+
+    public class MarkerDbA : NexMesh.Data.FreeSqlDBSourceBase<MarkerDbA>
+    {
+        public MarkerDbA(global::IFreeSql<MarkerDbA> fsql) : base(fsql)
+        {
+        }
     }
 }

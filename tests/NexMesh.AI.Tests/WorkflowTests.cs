@@ -164,7 +164,7 @@ public class WorkflowSafetyTests
             engine.ResumeAsync(suspended.WorkflowId, steps).ContinueWith(t =>
             {
                 // 第二个恢复应抛 409(MeshException);吞掉以断言
-                if (t.IsFaulted && t.Exception?.GetBaseException() is NexMesh.Core.MeshException mesh)
+                if (t.IsFaulted && t.Exception?.GetBaseException() is NexMesh.MeshException mesh)
                 {
                     return (WorkflowCheckpoint)null!;
                 }

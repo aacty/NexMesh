@@ -33,9 +33,10 @@ public static class NexMeshHostExtensions
         builder.Configuration.AddNexMeshConfig("Configs");
         var configuration = builder.Configuration;
 
-        // Core 总装 + 约定注入
+        // Core 总装 + 约定注入 + 契约实现注册
         builder.Services.AddNexMesh(configuration);
         builder.Services.AddNexMeshConventionServices(assemblies);
+        builder.Services.AddNexMeshContracts(assemblies);
 
         // 数据层:NexMesh:Db 配置驱动(Type/ConnectionString/AutoSyncStructure/WorkerId);
         // 整节缺失 → SQLite 本地文件(不装任何数据库也能跑,开发零基础设施)。
@@ -70,13 +71,13 @@ public static class NexMeshHostExtensions
         return builder;
     }
 
-    /// <summary>一行装配管道与端点:上下文快照 → 异常/TraceId → CORS → AutoApi → 健康检查 → OpenAPI/Scalar。</summary>
+    /// <summary>一行装配管道与端点:上下文快照 → 异常/TraceId → CORS → 契约端点 → 健康检查 → OpenAPI/Scalar。</summary>
     public static WebApplication UseNexMeshService(this WebApplication app, params Assembly[] assemblies)
     {
         app.UseNexMeshContext();
         app.UseNexMeshExceptionHandling();
         app.UseCors("nexmesh");
-        app.MapAutoApis(assemblies.Length > 0 ? assemblies : [Assembly.GetEntryAssembly()!]);
+        app.MapNexMeshContracts(assemblies.Length > 0 ? assemblies : [Assembly.GetEntryAssembly()!]);
         app.MapNexMeshHealth();
         app.MapNexMeshDocs();
         return app;

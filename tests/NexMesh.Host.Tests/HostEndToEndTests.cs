@@ -23,7 +23,7 @@ public class HostEndToEndTests : IAsyncLifetime
         public async Task InitializeAsync()
         {
             var builder = WebApplication.CreateBuilder();
-            builder.Configuration["NexMesh:AutoApi:AllowAnonymousByDefault"] = "true";
+            builder.Configuration["NexMesh:Contracts:AllowAnonymousByDefault"] = "true";
             builder.WebHost.UseTestServer();
             // 临时文件 SQLite + 无 AI Provider 配置 → 验证"零配置也能完整跑起来"
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -42,21 +42,23 @@ public class HostEndToEndTests : IAsyncLifetime
     public async Task DisposeAsync() => await _app.DisposeAsync();
 
     [Fact]
-    public async Task 一行总装后_AutoApi端点立即可用()
+    public async Task 一行总装后_契约端点立即可用()
     {
-        var response = await _client.PostAsync("/api/host-demo/pingasync", content: null);
+        var response = await _client.PostAsync("/api/HostDemo/Ping", content: null);
+        var body = await response.Content.ReadAsStringAsync();
 
-        Assert.True(response.IsSuccessStatusCode);
-        Assert.Equal("\"host-ok\"", await response.Content.ReadAsStringAsync());
+        Assert.True(response.IsSuccessStatusCode, body);
+        Assert.Contains("\"host-ok\"", body); // 信封 data 内
     }
 
     [Fact]
     public async Task 一行总装后_IFreeSql已注入且可写读()
     {
-        var response = await _client.PostAsync("/api/host-demo/countasync", content: null);
+        var response = await _client.PostAsync("/api/HostDemo/Count", content: null);
+        var body = await response.Content.ReadAsStringAsync();
 
-        Assert.True(response.IsSuccessStatusCode);
-        Assert.Equal("1", await response.Content.ReadAsStringAsync());
+        Assert.True(response.IsSuccessStatusCode, body);
+        Assert.Contains("\"data\":1", body);
     }
 
     [Fact]

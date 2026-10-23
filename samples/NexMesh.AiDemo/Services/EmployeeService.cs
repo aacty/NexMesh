@@ -2,19 +2,19 @@ namespace NexMesh.AiDemo.Services;
 
 using FreeSql;
 using Microsoft.AspNetCore.Mvc;
+using NexMesh;
 using NexMesh.AiDemo.Entities;
-using NexMesh.Core.AutoApi;
 using NexMesh.Core.DependencyInjection;
-using NexMesh.Core.Models;
 using NexMesh.Data;
 
 public record EmployeeDto(long Id, string Name, string Department);
 
 /// <summary>
-/// 员工管理契约:几千人规模的完整 CRUD。注意与 P1 版的差异——
+/// 员工管理契约:几千人规模的完整 CRUD。注意——
 /// 软删过滤/审计时间/操作人全部由数据层约定自动接管,业务代码只剩纯业务判断。
 /// </summary>
-public interface IEmployeeBiz : IAutoApi
+[ApiContract("employee")]
+public interface IEmployeeBiz : IServiceApi
 {
     Task<long> CreateAsync(EmployeeDto dto);
 
@@ -27,7 +27,7 @@ public interface IEmployeeBiz : IAutoApi
     [HttpDelete("{id}")]
     Task<bool> DeleteAsync(long id);
 
-    Task<PagedData<EmployeeDto>> SearchAsync(string? keyWords, string? department, int pageIndex = 1, int pageSize = 20);
+    Task<PagedResult<EmployeeDto>> SearchAsync(string? keyWords, string? department, int pageIndex = 1, int pageSize = 20);
 
     Task<long> GetCountAsync();
 }
@@ -35,7 +35,6 @@ public interface IEmployeeBiz : IAutoApi
 /// <summary>
 /// 写路径走 IRepository(审计/操作人/软删自动),读路径直接 IFreeSql(全局软删过滤生效)。
 /// </summary>
-[ServiceRoute("api/employee")]
 public class EmployeeService(IFreeSql db, IRepository<Employee> repo) : IEmployeeBiz, IScopedService
 {
     public async Task<long> CreateAsync(EmployeeDto dto)
@@ -65,7 +64,7 @@ public class EmployeeService(IFreeSql db, IRepository<Employee> repo) : IEmploye
 
     public Task<bool> DeleteAsync(long id) => repo.SoftDeleteAsync(id);
 
-    public async Task<PagedData<EmployeeDto>> SearchAsync(string? keyWords, string? department, int pageIndex = 1, int pageSize = 20)
+    public async Task<PagedResult<EmployeeDto>> SearchAsync(string? keyWords, string? department, int pageIndex = 1, int pageSize = 20)
     {
         var query = db.Select<Employee>()
             .WhereIf(!string.IsNullOrWhiteSpace(keyWords), e => e.Name.Contains(keyWords!.Trim()))
@@ -74,9 +73,11 @@ public class EmployeeService(IFreeSql db, IRepository<Employee> repo) : IEmploye
         var total = await query.CountAsync();
         var items = await query.OrderBy(e => e.Id).Page(pageIndex, pageSize).ToListAsync();
 
-        return new PagedData<EmployeeDto>
+        return new PagedResult<EmployeeDto>
         {
-            Total = total,
+            TotalCount = total,
+            PageIndex = pageIndex,
+            PageSize = pageSize,
             Items = items.Select(ToDto).ToList(),
         };
     }

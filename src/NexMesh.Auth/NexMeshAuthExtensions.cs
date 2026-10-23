@@ -6,27 +6,42 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NexMesh.Core;
-using NexMesh.Core.Models;
 
 /// <summary>NexMesh.Auth 注册与端点。</summary>
 public static class NexMeshAuthExtensions
 {
     /// <summary>
-    /// 注册认证:配置绑定(NexMesh:Auth)、内存会话存储默认(Redis 实现随缓存包)、Token 服务。
-    /// 业务须实现并注册 ILoginValidator(未注册时登录端点返回配置错误)。
+    /// 注册认证:配置绑定(NexMesh:Auth / NexMesh:Authentication)、内存会话存储默认
+    /// (多实例用 AddNexMeshRedisAuthStore 覆盖)、Token 服务 + IJwtTokenService(不透明令牌)
+    /// + ITokenStore(业务令牌白名单)。业务须实现并注册 ILoginValidator。
     /// </summary>
     public static IServiceCollection AddNexMeshAuth(
         this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<NexMeshAuthOptions>()
             .Configure(o => configuration.GetSection("NexMesh:Auth").Bind(o));
+        services.AddOptions<AuthenticationOptions>()
+            .Configure(o => configuration.GetSection("NexMesh:Authentication").Bind(o));
         // 占位 Scheme:让 RequireAuthorization 的 Challenge/Forbid 走标准管线(实际认证在中间件)
         services.AddAuthentication("NexMeshToken")
             .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, NexMeshTokenAuthHandler>("NexMeshToken", null);
         services.AddAuthorization(); // [Authorize]/RequireAuthorization 的授权服务(内置,业务零心智)
+        services.AddSingleton<ISessionStore, MemorySessionStore>();
+        services.AddSingleton<IClaimsJournal, MemoryClaimsJournal>();
         services.AddSingleton<ITokenStore, MemoryTokenStore>();
         services.AddSingleton<NexMeshTokenService>();
+        services.AddSingleton<IJwtTokenService, NexMeshJwtTokenService>();
         services.AddSingleton(new LoginRateLimiter(configuration)); // B5:登录限流(配置直接注入,不依赖容器 IConfiguration)
+
+        // 兼容配置节(NexMesh:Authentication)存在时,Jwt.AccessTokenExpirationMinutes 成为签发有效期权威
+        var authSection = configuration.GetSection("NexMesh:Authentication");
+        if (authSection.Exists())
+        {
+            var authOptions = new AuthenticationOptions();
+            authSection.Bind(authOptions);
+            services.Configure<NexMeshAuthOptions>(o =>
+                o.AccessTokenExpireMinutes = authOptions.Jwt.AccessTokenExpirationMinutes);
+        }
         return services;
     }
 
@@ -40,14 +55,14 @@ public static class NexMeshAuthExtensions
             if (!limiter.TryPass(http))
             {
                 return Results.Json(
-                    ApiResult<object>.Fail(42901, "登录尝试过于频繁,请稍后再试"), statusCode: 429);
+                    ApiResult<object>.Fail("登录尝试过于频繁,请稍后再试", 429), statusCode: 429);
             }
 
             var validator = http.RequestServices.GetService<ILoginValidator>();
             if (validator is null)
             {
                 return Results.Json(
-                    ApiResult<object>.Fail(50004, "未配置 ILoginValidator,业务侧需实现并注册登录验证"),
+                    ApiResult<object>.Fail("未配置 ILoginValidator,业务侧需实现并注册登录验证", 500),
                     statusCode: 500);
             }
 
@@ -55,7 +70,7 @@ public static class NexMeshAuthExtensions
             if (user is null)
             {
                 return Results.Json(
-                    ApiResult<object>.Fail(40102, "用户名或密码错误"), statusCode: 401);
+                    ApiResult<object>.Fail("用户名或密码错误", 401), statusCode: 401);
             }
 
             var session = await http.RequestServices.GetRequiredService<NexMeshTokenService>().IssueAsync(user);

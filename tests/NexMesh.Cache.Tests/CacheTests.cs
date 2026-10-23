@@ -144,7 +144,7 @@ public class IdempotencyTests
         Assert.True(ok.IsSuccessStatusCode);
         var conflict = await second;
         Assert.Equal(System.Net.HttpStatusCode.Conflict, conflict.StatusCode);
-        Assert.Contains("40901", await conflict.Content.ReadAsStringAsync());
+        Assert.Contains("\"code\":409", await conflict.Content.ReadAsStringAsync());
         await app.DisposeAsync();
     }
 }
@@ -181,5 +181,39 @@ public class RealRedisTests
         Assert.NotNull(lockA);
         Assert.Null(await b.TryLockAsync("cross", TimeSpan.FromSeconds(10))); // 跨实例互斥
         await lockA!.DisposeAsync();
+    }
+}
+
+/// <summary>缓存数据源基类(键值表面):同步/异步 + 类型 + 过期。</summary>
+public class CacheSourceBaseTests
+{
+    public class DemoCacheSource(NexMesh.Cache.ICacheSource cache, NexMesh.Cache.CacheSourceOptions options)
+        : NexMesh.Cache.CacheSourceBase(cache, options);
+
+    [Fact]
+    public async Task 键值表面_同步异步读写删()
+    {
+        var services = new ServiceCollection();
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>()).Build();
+        services.AddNexMeshCache(config);
+        var provider = services.BuildServiceProvider();
+
+        var factory = provider.GetRequiredService<NexMesh.Cache.ICacheFactory>();
+        var options = new NexMesh.Cache.CacheSourceOptions { KeyPrefix = "sw:" };
+        var source = new DemoCacheSource(factory.Get(), options);
+
+        source.SetString("k1", "v1", 300);
+        Assert.Equal("v1", source.GetString("k1"));
+        Assert.True(source.Exists("k1"));
+
+        source.Set("num", 42);
+        Assert.Equal(42, source.Get<int>("num"));
+
+        await source.SetStringAsync("k2", "v2", 300);
+        Assert.Equal("v2", await source.GetStringAsync("k2"));
+
+        await source.RemoveAsync("k1");
+        Assert.False(source.Exists("k1"));
     }
 }

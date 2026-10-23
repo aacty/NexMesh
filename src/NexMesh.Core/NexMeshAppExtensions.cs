@@ -26,6 +26,7 @@ public static class NexMeshAppExtensions
         services.AddSingleton<INexMeshContextAccessor, AsyncLocalNexMeshContextAccessor>();
         services.AddSingleton<INexMeshBackgroundRunner, NexMeshBackgroundRunner>();
         services.AddScoped<ICurrentUser, CurrentUser>();
+        services.AddScoped(typeof(ICurrentUser<>), typeof(CurrentUser<>)); // 强类型业务用户模型(开放泛型)
         services.AddHealthChecks();
 
         // B4:multipart 上限可配置(NexMesh:Upload:MaxSizeBytes),默认 100MB——不再放开到无界

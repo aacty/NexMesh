@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NexMesh.Core.Models;
 using System.Text.Encodings.Web;
 
 /// <summary>
@@ -52,9 +51,21 @@ public sealed class NexMeshTokenAuthHandler(
         {
             claims.Add(new Claim("tenantid", renewed.TenantId));
         }
-        foreach (var (key, value) in renewed.Claims)
+        if (renewed.ClaimList is { } claimList)
         {
-            claims.Add(new Claim(key, value));
+            // 多值声明权威来源(如多个 Role → ClaimTypes.Role 逐条展开,授权策略 IsInRole 直接可用)
+            foreach (var tokenClaim in claimList)
+            {
+                claims.Add(new Claim(tokenClaim.Type, tokenClaim.Value));
+            }
+        }
+        else
+        {
+            // 旧路径:单值字典展开(无 ClaimList 的会话行为与历史版本一致)
+            foreach (var (key, value) in renewed.Claims)
+            {
+                claims.Add(new Claim(key, value));
+            }
         }
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: Scheme.Name));
@@ -72,7 +83,8 @@ public sealed class NexMeshTokenAuthHandler(
 
         Response.StatusCode = StatusCodes.Status401Unauthorized;
         Response.ContentType = "application/json";
-        await Response.WriteAsync(JsonSerializer.Serialize(ApiResult<object>.Fail(40101, message)));
+        await Response.WriteAsync(JsonSerializer.Serialize(
+            ApiResult<object>.Fail(message, 401), JsonSerializerOptions.Web));
     }
 }
 
@@ -96,7 +108,7 @@ public static class NexMeshAuthAppExtensions
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsync(JsonSerializer.Serialize(
-                ApiResult<object>.Fail(40101, "访问令牌无效、已过期或已吊销")));
+                ApiResult<object>.Fail("访问令牌无效、已过期或已吊销", 401), JsonSerializerOptions.Web));
             return;
         }
         await next();

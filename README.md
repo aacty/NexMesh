@@ -42,12 +42,17 @@
 // 这就是一个完整的企业级 AI 服务（认证+CRUD+AI工具+审批门）
 // 没有DI注册、没有路由配置、没有中间件顺序、没有AI管道搭建
 
-[ServiceRoute("api/order")]
+public interface IOrderApi : IServiceApi
+{
+    [HttpDelete("{id}")]
+    Task<bool> DeleteAsync(long id);
+    // ... 其余方法同理标注 [Http*]，路由/绑定/授权/文档全自动
+}
+
 public class OrderService(IFreeSql db, IRepository<Order> repo)
-    : IOrderBiz, IScopedService
+    : IOrderApi, IScopedService
 {
     // 普通 CRUD —— 软删/审计/操作人全部自动
-    [HttpDelete("{id}")]
     public Task<bool> DeleteAsync(long id) => repo.SoftDeleteAsync(id);
 
     // AI 工具 —— 自动注册为大模型可调用的 Function
@@ -87,9 +92,9 @@ TOKEN=$(curl -s -X POST http://localhost:5099/api/auth/login \
   -d '{"username":"doctor","password":"123456"}' | jq -r '.data.accessToken')
 
 # 员工分页检索（3000 条数据）
-curl -X POST "http://localhost:5099/api/employee/searchasync?pageIndex=2&pageSize=5" \
+curl -X POST "http://localhost:5099/api/employee/Search?pageIndex=2&pageSize=5" \
   -H "Authorization: Bearer $TOKEN"
-# → {"total":3000,"items":[...]}
+# → {"success":true,"code":0,"data":{"totalCount":3000,"items":[...]}}
 
 # 流式 AI 对话
 curl -N -X POST http://localhost:5099/api/ai/chat \
@@ -142,7 +147,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddNexMeshService();     // ← 这一行装了：配置/约定注入/FreeSql/AI管道/缓存/中间件
 
 var app = builder.Build();
-app.UseNexMeshService();         // ← 这一行装了：上下文快照/异常/CORS/AutoApi/健康/文档
+app.UseNexMeshService();         // ← 这一行装了：上下文快照/异常/CORS/契约端点/健康/文档
 app.Run();
 ```
 
@@ -186,7 +191,7 @@ app.Run();
 
 | 能力 | 你写的 | 框架做的 |
 |---|---|---|
-| REST API | `interface IOrderBiz : IAutoApi` + `[HttpGet("{id}")]` | 路由/绑定/授权/文档/参数校验 |
+| REST API | `interface IOrderApi : IServiceApi` + `[HttpGet("{id}")]` | 路由/绑定/授权/文档/参数校验 |
 | 数据实体 | `class Order : ISoftDelete, IAudited` | 软删过滤/审计填充/并发戳/雪花ID |
 | 多租户 | `class Order : ITenantEntity` | 全局过滤/写入填充/缓存隔离 |
 | 授权 | `[Authorize]` 标注 | 默认拒绝/401/403/RequireAuthorization |
@@ -223,7 +228,7 @@ NexMesh 从第一行代码就按医疗级安全标准设计，经过 **SSS+ 双�
 ```
 ┌────────────────────────────────────────────────────────┐
 │                    默认拒绝                              │
-│  AutoApi 未标注 → 401  ·  网关 → 401  ·  审批中心 → 401 │
+│  契约端点未标注 → 401  ·  网关 → 401  ·  审批中心 → 401 │
 ├────────────────────────────────────────────────────────┤
 │                  租户隔离（三层闭环）                     │
 │  读：全局过滤    写：自动填充    缓存：键隔离            │
@@ -294,7 +299,7 @@ NexMesh 从第一行代码就按医疗级安全标准设计，经过 **SSS+ 双�
 |---|---|---|
 | 1 | 一行总装 | Host |
 | 2 | 约定注入 | Core |
-| 3 | AutoApi（完整参数绑定） | Core |
+| 3 | 契约端点引擎（IServiceApi 完整参数绑定） | Core |
 | 4 | 虚拟网关（10M+ 路由） | Core |
 | 5 | 上下文显式绑定 | Core |
 | 6 | 三层防御 | Core + AI |

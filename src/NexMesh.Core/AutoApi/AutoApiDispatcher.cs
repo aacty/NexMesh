@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-/// <summary>AutoApi 执行元数据(字面量端点与虚拟网关共用)。</summary>
+/// <summary>契约端点执行元数据(字面量端点与虚拟网关共用)。</summary>
 public sealed record AutoApiEndpoint(
     Type ServiceType,
     MethodInfo Method,
@@ -21,6 +21,12 @@ public sealed record AutoApiEndpoint(
 
     /// <summary>显式 [Authorize] 标注存在(与默认拒绝配置共同决定 RequireAuthorization)。</summary>
     public bool ExplicitAuthorize { get; init; }
+
+    /// <summary>[Authorize(Roles)] 解析出的角色集合(逗号分隔)。</summary>
+    public string[]? Roles { get; init; }
+
+    /// <summary>OpenAPI 分组标签(契约接口名)。</summary>
+    public string? Tags { get; init; }
 }
 
 /// <summary>
@@ -58,14 +64,9 @@ internal static class AutoApiDispatcher
         if (result is Task task)
         {
             await task;
-            if (endpoint.DeclaredResult != null)
-            {
-                await WriteResultAsync(context, endpoint.DeclaredResult.GetValue(task));
-            }
-            else
-            {
-                context.Response.StatusCode = StatusCodes.Status204NoContent;
-            }
+            // void/Task → 空载荷成功信封(200);Task<T> → 取声明 Result 包装
+            var value = endpoint.DeclaredResult != null ? endpoint.DeclaredResult.GetValue(task) : null;
+            await WriteResultAsync(context, value);
             return;
         }
         await WriteResultAsync(context, result);
@@ -309,18 +310,16 @@ internal static class AutoApiDispatcher
 
     private static async Task WriteResultAsync(HttpContext context, object? result)
     {
-        if (result is null)
-        {
-            context.Response.StatusCode = StatusCodes.Status204NoContent;
-            return;
-        }
-        // IActionResult(文件流/重定向等)按 MVC 语义执行,而非 JSON 序列化
+        // IActionResult(文件流/重定向等)按 MVC 语义执行,而非信封包装
         if (result is Microsoft.AspNetCore.Mvc.IActionResult action)
         {
             await action.ExecuteResultAsync(new Microsoft.AspNetCore.Mvc.ActionContext(
                 context, context.GetRouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
             return;
         }
-        await context.Response.WriteAsJsonAsync(result);
+        // 统一 ApiResult 信封:Success=true/Code=0/Data(含 null)/TraceId(经宿主 JsonOptions 序列化)
+        var envelope = ApiResult<object?>.Ok(result);
+        envelope.TraceId = System.Diagnostics.Activity.Current?.TraceId.ToString();
+        await context.Response.WriteAsJsonAsync(envelope);
     }
 }
