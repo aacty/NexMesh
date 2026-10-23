@@ -1,14 +1,10 @@
 name: publish
 
-# 发布策略:仅手动触发(打 tag 不再自动发布)。
-# 发布前必须由人工在 Actions → publish → Run workflow 确认执行——人工审核即发布闸门。
+# 发布策略:tag 触发发布,但 tag 的推送是人工动作——每次发布前人工确认打 tag 即为审核闸门。
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
-    inputs:
-      version:
-        description: '包版本(0.MINOR.RUN_NUMBER,与 GITHUB_RUN_NUMBER 一致;留空则自动取 run_number)'
-        required: false
-        default: ''
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
