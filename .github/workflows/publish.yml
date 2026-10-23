@@ -29,10 +29,9 @@ jobs:
       - name: Compute version (0.MINOR.RUN_NUMBER)
         id: version
         run: |
-          # 版本策略:0.0.{run_number} 自动递增 → 0.0.999 后手动升 0.1.0
           VERSION="0.0.${{ github.run_number }}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Publishing version: $VERSION"
+          echo "📦 Version: $VERSION"
 
       - name: Restore
         run: dotnet restore NexMesh.slnx
@@ -61,12 +60,13 @@ jobs:
       - name: Push to NuGet.org
         run: |
           PKG_COUNT=$(ls ./packages/*.nupkg | wc -l)
-          echo "Publishing $PKG_COUNT packages (version ${{ steps.version.outputs.version }})..."
+          echo "🚀 Publishing $PKG_COUNT packages (version ${{ steps.version.outputs.version }})..."
           for pkg in ./packages/*.nupkg; do
             name=$(basename "$pkg")
             echo "  → $name"
             dotnet nuget push "$pkg" \
               --source https://api.nuget.org/v3/index.json \
+              --api-key "${{ secrets.NUGET_API_KEY }}" \
               --skip-duplicate
           done
-          echo "✅ $PKG_COUNT packages pushed successfully."
+          echo "✅ $PKG_COUNT packages pushed."
