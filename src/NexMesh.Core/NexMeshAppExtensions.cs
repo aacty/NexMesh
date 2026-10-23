@@ -113,8 +113,9 @@ public static class NexMeshAppExtensions
         {
             // Scalar 页面标题(浏览器标签页与页首)
             options.WithTitle(string.IsNullOrWhiteSpace(title) ? "NexMesh API" : title);
-            // 侧栏与搜索显示真实路由(默认只显摘要);中文摘要/字段注释保留在接口详情区
-            options.WithOperationTitleSource(Scalar.AspNetCore.OperationTitleSource.Path);
+            // 侧栏/搜索标题取 summary(Scalar 侧栏单项仅一行文本,无副标题行)——
+            // 文档生成器已把 summary 组合为"中文描述 METHOD /路由",侧栏同时可见描述与真实路由
+            options.WithOperationTitleSource(Scalar.AspNetCore.OperationTitleSource.Summary);
         });
         return endpoints;
     }

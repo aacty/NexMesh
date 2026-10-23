@@ -24,14 +24,18 @@ public static class ContractOpenApiDocument
         var paths = new JsonObject();
         var tags = new JsonObject();
 
+        var endpoints = ContractApiExtensions.ScanContractEndpoints(scanned);
+
         // 短名冲突预检:不同命名空间的同名契约(如 A.ISysApi/B.ISysApi)若都用短名会合并成一个分组,
-        // 冲突时退回 FullName 做分组名(展示长但无歧义)
-        var shortNameCounts = ContractApiExtensions.ScanContractEndpoints(scanned)
-            .Select(e => e.Tags ?? e.ServiceType.Name)
+        // 冲突时退回 FullName 做分组名(展示长但无歧义)。按"不同契约接口"计数——
+        // 同一接口的 N 个方法不是 N 个同名契约
+        var shortNameCounts = endpoints
+            .GroupBy(e => e.ServiceType)
+            .Select(g => g.First().Tags ?? g.Key.Name)
             .GroupBy(n => n, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
-        foreach (var endpoint in ContractApiExtensions.ScanContractEndpoints(scanned))
+        foreach (var endpoint in endpoints)
         {
             var methodId = $"{endpoint.ServiceType.FullName}.{endpoint.Method.Name}";
             var summary = summaries.TryGetValue(methodId, out var xml)
@@ -43,10 +47,15 @@ public static class ContractOpenApiDocument
             var tagName = shortNameCounts.GetValueOrDefault(shortName) > 1
                 ? endpoint.ServiceType.FullName ?? shortName
                 : shortName;
+            var pathKey = "/" + endpoint.Route.TrimStart('/');
+
+            // Scalar 侧栏/搜索的标题取 summary 或 path 二选一(无副标题行);合并为
+            // "描述 METHOD /路由"——Summary 模式下侧栏一行同时可见中文描述与真实路由
+            var summaryText = $"{summary.TrimEnd('.', '。', ' ')} {endpoint.Verb} {pathKey}";
 
             var operation = new JsonObject
             {
-                ["summary"] = summary,
+                ["summary"] = summaryText,
                 ["operationId"] = methodId,
                 ["tags"] = new JsonArray(tagName),
             };
@@ -152,7 +161,6 @@ public static class ContractOpenApiDocument
                 ["500"] = new JsonObject { ["description"] = "服务器内部错误(code=500,消息不暴露细节)", ["content"] = errorContent },
             };
 
-            var pathKey = "/" + endpoint.Route.TrimStart('/');
             var verb = endpoint.Verb.ToLowerInvariant();
             var pathItem = paths[pathKey] as JsonObject ?? new JsonObject();
             // TryAdd:首个遇到的服务注释作为分组描述(后到者不覆盖)
