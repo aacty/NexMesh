@@ -507,10 +507,9 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
     private static string ToCamelCase(string name) =>
         name.Length > 0 ? char.ToLowerInvariant(name[0]) + name[1..] : name;
 
-    private static bool IsSimple(Type type) =>
-        type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)
-        || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type == typeof(Guid) || type == typeof(char)
-        || type == typeof(Half); // Half 非 IsPrimitive,漏收会掉对象分支按属性展开
+    // 简单类型判定唯一源 = AutoApiDispatcher.IsSimple(绑定引擎权威):schema 生成与 query/Body 判定共用同一集合,
+    // 消除"两套 IsSimple 各自维护"导致的参数静默消失(char/Half/DateTime 等边界类型错位)
+    private static bool IsSimple(Type type) => NexMesh.Core.AutoApi.AutoApiDispatcher.IsSimple(type);
 
     /// <summary>KeyValuePair 序列识别:IEnumerable&lt;KeyValuePair&lt;,&gt;&gt; 或 KeyValuePair&lt;,&gt;[](不含 IDictionary——已被上一分支接管)。</summary>
     private static bool IsKeyValuePairEnumerable(Type type) => GetKeyValuePairType(type) is not null;

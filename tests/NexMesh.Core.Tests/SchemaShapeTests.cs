@@ -123,6 +123,29 @@ public class SchemaShapeTests
             (second["properties"]!["items"] as JsonObject)!["description"]?.GetValue<string>());
     }
 
+    [Theory]
+    [InlineData(typeof(char))]
+    [InlineData(typeof(Half))]
+    [InlineData(typeof(DateTime))]
+    [InlineData(typeof(DateTimeOffset))]
+    [InlineData(typeof(decimal))]
+    [InlineData(typeof(Guid))]
+    [InlineData(typeof(DayOfWeek))] // 枚举
+    [InlineData(typeof(string))]
+    [InlineData(typeof(Dictionary<long, string>))] // 复杂:map
+    [InlineData(typeof(List<long>))] // 复杂:数组
+    [InlineData(typeof(KeyValuePair<long, string>))] // 复杂:key/value 对象
+    public void 边界类型_绑定判定与schema形态同源一致(Type type)
+    {
+        var isSimple = AutoApi.AutoApiDispatcher.IsSimple(type);
+        var schema = Gen().Of(type, 0);
+
+        // 简单类型 ⟺ schema 为简单形态(string/integer/number/boolean)——
+        // 判定与 schema 共用单一 IsSimple 实现,两边永远一致;此断言防再次分叉回退
+        var isSimpleForm = schema["type"]?.GetValue<string>() is "string" or "integer" or "number" or "boolean";
+        Assert.Equal(isSimple, isSimpleForm);
+    }
+
     private sealed class RequiredSample
     {
         public long Id { get; set; }
