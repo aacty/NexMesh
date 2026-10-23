@@ -14,7 +14,7 @@ public static class ContractOpenApiDocument
     private const int MaxDepth = 4;
 
     /// <summary>生成 OpenAPI 3.2 文档(JSON DOM);title/version 可从 NexMesh:Scalar:Document 读取。</summary>
-    public static JsonObject Build(Assembly[] assemblies, string? title = null, string? version = null)
+    public static JsonObject Build(Assembly[] assemblies, string? title = null, string? version = null, string? description = null)
     {
         var summaries = LoadXmlSummaries(assemblies);
         var schemaGen = new ContractSchemaGenerator(summaries);
@@ -141,6 +141,7 @@ public static class ContractOpenApiDocument
             {
                 ["title"] = string.IsNullOrWhiteSpace(title) ? "NexMesh API" : title,
                 ["version"] = string.IsNullOrWhiteSpace(version) ? "v1" : version,
+                ["description"] = string.IsNullOrWhiteSpace(description) ? null : description,
             },
             ["paths"] = paths,
             ["tags"] = new JsonArray(
