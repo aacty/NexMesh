@@ -2,161 +2,365 @@
 
 # NexMesh
 
-**你只写业务代码，框架处理其余一切**
+**你只写业务逻辑，框架处理其余一切**
 
-.NET 10 企业级 AI 与业务融合框架
+[![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](https://dotnet.microsoft.com)
+[![Tests](https://img.shields.io/badge/tests-129%20passed-brightgreen?style=flat-square)]()
+[![Security](https://img.shields.io/badge/security-SSS%2B%20reviewed-blue?style=flat-square)]()
+[![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
+[![Packages](https://img.shields.io/badge/packages-11-purple?style=flat-square)]()
+
+**企业级 AI 与业务融合框架** — 让 CRUD 和 AI 工具调用共享同一套编程模型
+
+[快速开始](#快速开始) · [为什么选择 NexMesh](#为什么选择-nexmesh) · [30 秒体验](#30-秒体验) · [文档](#文档)
 
 </div>
 
 ---
 
-## 项目状态
+## 为什么选择 NexMesh
 
-**当前版本：v2.0.0-alpha.1 · 129 项测试全绿 · 零构建警告 · SSS+ 双轮安全审查通过**
+### 没有 NexMesh 的世界
 
-### 已完成 ✅
+构建一个包含 AI 能力的企业级后端，你需要：
 
-| 能力域 | 状态 | 包 |
-|---|---|---|
-| 一行总装（配置/DI/数据库/AI/中间件） | ✅ 可用 | Host |
-| 约定注入（标记接口自动注册） | ✅ 可用 | Core |
-| AutoApi（接口声明→REST，完整参数绑定） | ✅ 可用 | Core |
-| 虚拟网关（10M+ 逻辑路由） | ✅ 可用 | Core |
-| 上下文显式绑定（跨线程/离线断链） | ✅ 可用 | Core |
-| 认证（不透明 Token/登录限流/滑动续期） | ✅ 可用 | Auth |
-| 授权（[Authorize] 标注/默认拒绝） | ✅ 可用 | Core + Auth |
-| AI Chat 管道（弹性/断连熔断/遥测/函数调用） | ✅ 可用 | AI |
-| AI 工具注册（静态+实例/安全门/自纠错） | ✅ 可用 | AI |
-| 审批门（High 工具挂起→批准→执行） | ✅ 可用 | AI.Approval |
-| 语义缓存（向量命中秒回/租户隔离） | ✅ 可用 | AI.SemanticCache |
-| ToolSearch（语义召回 Top-K） | ✅ 可用 | AI |
-| 工作流（步骤/CHECKPOINT/HITL 恢复） | ✅ 可用 | AI.Workflow |
-| 数据层（软删/审计/租户/并发/雪花/仓储） | ✅ 可用 | Data.FreeSql |
-| 双层缓存（防击穿/分布式锁/幂等防重） | ✅ 可用 | Cache |
-| 定时调度（Cron/Interval/异常隔离） | ✅ 可用 | Worker |
-| 工具箱（Excel/文件 Blob/邮件/脱敏） | ✅ 可用 | Toolbox |
-| 脚手架模板 | ✅ 可用 | templates |
-| 安全体系（默认拒绝/租户三层/三层防御） | ✅ 审查通过 | — |
-
-### 进行中 🔄
-
-| 项 | 说明 |
+| 手动处理 | 涉及的包/代码量 |
 |---|---|
-| NuGet 包发布 | 模板需要 NuGet 包（当前仅项目引用可用） |
-| CI/CD 流水线 | GitHub Actions 配置待适配新结构 |
+| DI 注册 + 生命周期管理 | 每个服务手动 `AddScoped<T>()` |
+| 路由映射 + 参数绑定 | Controller/Endpoint 手写，每个参数单独处理 |
+| 认证 + 授权 + Token 管理 | JWT/ApiKey 配置、过期、续期、吊销 |
+| 软删除 + 审计字段 + 多租户 | 每个查询手动加 `WHERE`，每个写入手动填字段 |
+| AI 工具注册 + 安全管控 | 手写 `AIFunction` 包装、参数解析、风险拦截 |
+| 缓存 + 防击穿 + 分布式锁 | 选型 + 接入 + 防御性编程 |
+| 断连后模型继续烧钱 | 没人处理，直到账单到来 |
+| 跨线程身份丢失 | 后台任务读不到当前用户，偶现且难排查 |
+| 大模型 JSON 参数写错 | 直接崩溃，Agent 循环中断 |
 
-### 计划中 📋
+### 有 NexMesh 的世界
 
-| 项 | 优先级 | 说明 |
-|---|---|---|
-| OIDC 单点登录 | 中 | 对接 IdentityServer/Keycloak/Auth0 |
-| gRPC 支持 | 中 | 高性能内部通信 |
-| 服务发现（Nacos/Consul） | 低 | 微服务注册与发现 |
-| 事件总线（CAP） | 低 | 进程内/RabbitMQ 事件 |
-| 数据库迁移（SQL 脚本） | 中 | 版本化 Schema 管理 |
-| 性能基准（BenchmarkDotNet） | 低 | 管道开销/内存分配量化 |
-| Blazor 管理界面 | 低 | 内置审批中心/用户管理 UI |
-| GraphQL 端点 | 低 | 灵活查询 |
+```csharp
+// 这就是一个完整的企业级 AI 服务（认证+CRUD+AI工具+审批门）
+// 没有DI注册、没有路由配置、没有中间件顺序、没有AI管道搭建
+
+[ServiceRoute("api/order")]
+public class OrderService(IFreeSql db, IRepository<Order> repo)
+    : IOrderBiz, IScopedService
+{
+    // 普通 CRUD —— 软删/审计/操作人全部自动
+    [HttpDelete("{id}")]
+    public Task<bool> DeleteAsync(long id) => repo.SoftDeleteAsync(id);
+
+    // AI 工具 —— 自动注册为大模型可调用的 Function
+    [NexMeshTool("查询订单状态。低风险只读。", NexMeshRiskLevel.Low)]
+    public async Task<string> QueryAsync(long orderId)
+        => (await db.Select<Order>().Where(o => o.Id == orderId).FirstAsync())?.ToString()
+           ?? $"订单 {orderId} 不存在";
+
+    // 高危 AI 工具 —— 自动挂起等审批，批准后按触发者身份执行
+    [NexMeshTool("强制退款。高危写操作！", NexMeshRiskLevel.High)]
+    public async Task<string> RefundAsync(long orderId, string reason)
+        => $"订单 {orderId} 已退款：{reason}";
+}
+```
+
+**一个类 = REST API + AI 工具 + 审批门 + 审计追踪。**
 
 ---
 
-## 框架能做什么
+## 30 秒体验
 
-| 你只需要写 | 框架自动处理 |
-|---|---|
-| POCO 实体 + 接口约定 | 软删/审计/租户隔离/并发/雪花ID 全自动 |
-| 业务接口 + `[Http*]` 标注 | REST 路由/参数绑定/授权/文档 全自动 |
-| `[NexMeshTool(描述, 风险)]` 方法 | AI 工具注册/安全门/遥测/语义召回 |
-| 继承 `NexMeshWorkflowStep` | 检查点持久化/HITL挂起恢复/CAS防并发 |
+```bash
+# 克隆并运行（零配置，内置 SQLite + Stub LLM）
+git clone https://gitee.com/520vip/NexMesh.git
+cd NexMesh/samples/NexMesh.AiDemo
+dotnet run
+```
 
-## 30 秒上手
+```bash
+# 健康检查
+curl http://localhost:5099/health
+# → Healthy
+
+# 登录
+TOKEN=$(curl -s -X POST http://localhost:5099/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"doctor","password":"123456"}' | jq -r '.data.accessToken')
+
+# 员工分页检索（3000 条数据）
+curl -X POST "http://localhost:5099/api/employee/searchasync?pageIndex=2&pageSize=5" \
+  -H "Authorization: Bearer $TOKEN"
+# → {"total":3000,"items":[...]}
+
+# 流式 AI 对话
+curl -N -X POST http://localhost:5099/api/ai/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"prompt":"hello"}'
+# → data: [NexMesh Stub] 这是一段离线流式演示输出。
+```
+
+---
+
+## 快速开始
+
+<details>
+<summary><b>方式一：脚手架（推荐）</b></summary>
 
 ```bash
 dotnet new install ./templates/NexMesh.Templates/content
 dotnet new nexmesh-ai -n MyApp
 cd MyApp && dotnet run
-# 打开 http://localhost:5180/health
 ```
 
-## 11 个包
+</details>
 
-| 包 | 定位 |
-|---|---|
-| **NexMesh.Host** | 一行总装：配置/约定注入/FreeSql/AI管道/中间件 |
-| **NexMesh.Core** | 约定注入 · AutoApi · 虚拟网关 · 上下文显式绑定 · 三层防御 |
-| **NexMesh.AI** | Chat管道 · 弹性 · 断连熔断 · 工具三防 · ToolSearch · 实例工具 |
-| **NexMesh.AI.Approval** | 审批门：High 工具挂起拦截 · 幂等键 · 批准后再水化执行 |
-| **NexMesh.AI.SemanticCache** | 语义缓存：向量命中秒回 · 租户隔离 |
-| **NexMesh.AI.Workflow** | 工作流：Checkpoint · HITL 挂起恢复 · CAS 防并发 |
-| **NexMesh.Auth** | 不透明 Token · 登录限流 · 滑动续期 · 默认拒绝 |
-| **NexMesh.Cache** | 双层缓存(L1+L2) · 防击穿 · 分布式锁 · 幂等防重 |
-| **NexMesh.Data.FreeSql** | 实体约定自动接管 · 多库 · 仓储 |
-| **NexMesh.Toolbox** | Excel · 文件Blob · 邮件 · 脱敏 |
-| **NexMesh.Worker** | Cron/Interval 调度 · 异常隔离 · 系统身份 |
+<details>
+<summary><b>方式二：从零搭建</b></summary>
 
-## 安全体系
+```bash
+dotnet new web -n MyApp && cd MyApp
+dotnet add reference ../NexMesh/src/NexMesh.Host/NexMesh.Host.csproj
+```
 
-| 防线 | 机制 |
-|---|---|
-| **默认拒绝** | 未标注端点→401；审批中心→requireAuth；网关→handler 401 |
-| **租户隔离** | 全局过滤 + 写入填充 + 缓存键隔离（三层闭环） |
-| **AI 安全门** | High 工具启动阻断(未启用审批门) / 挂起拦截(启用后) |
-| **三层防御** | 断连熔断 · 上下文穿帮防护 · 工具参数自纠错 |
-| **信息泄露** | 500 不暴露 ex.Message · 工具异常只回喂类型名 · 生产不暴露文档 |
+创建 `Configs/app.json`：
 
-## 完整业务示例
+```json
+{
+  "NexMesh": {
+    "Db": { "Type": "Sqlite", "ConnectionString": "Data Source=app.db", "AutoSyncStructure": true },
+    "AI": { "Providers": { "main": { "Type": "stub", "Model": "stub" } } }
+  }
+}
+```
+
+`Program.cs`：
 
 ```csharp
-// ── 实体：实现接口即自动接管 ──
-public class Employee : ISoftDelete, IAudited, IUserAudited
-{
-    [Column(IsIdentity = true)] public long Id { get; set; }
-    public string Name { get; set; } = "";
-    public bool IsDeleted { get; set; }         // 软删自动
-    public DateTime CreateTime { get; set; }    // 审计自动
-}
+using NexMesh.Host;
 
-// ── 接口：声明即 REST API ──
-public interface IEmployeeBiz : IAutoApi
-{
-    Task<long> CreateAsync(EmployeeDto dto);                       // POST /api/employee/createasync
-    [HttpGet("{id}")] Task<EmployeeDto?> GetAsync(long id);        // GET  /api/employee/{id}
-    [HttpDelete("{id}")] Task<bool> DeleteAsync(long id);          // DELETE(软删)
-    Task<PagedData<EmployeeDto>> SearchAsync(string? key, int pageIndex = 1, int pageSize = 20);
-}
+var builder = WebApplication.CreateBuilder(args);
+builder.AddNexMeshService();     // ← 这一行装了：配置/约定注入/FreeSql/AI管道/缓存/中间件
 
-// ── 实现：安安静静写业务 ──
-[ServiceRoute("api/employee")]
-public class EmployeeService(IFreeSql db, IRepository<Employee> repo)
-    : IEmployeeBiz, IScopedService
-{
-    public Task<bool> DeleteAsync(long id) => repo.SoftDeleteAsync(id);
-}
+var app = builder.Build();
+app.UseNexMeshService();         // ← 这一行装了：上下文快照/异常/CORS/AutoApi/健康/文档
+app.Run();
+```
 
-// ── AI 工具：同一个服务类 ──
-public class OrderTools(IFreeSql db) : IScopedService
-{
-    [NexMeshTool("查询订单状态。低风险只读。", NexMeshRiskLevel.Low)]
-    public async Task<string> QueryAsync(long orderId) { /* 查库 */ }
+</details>
 
-    [NexMeshTool("强制退款。高危写操作!", NexMeshRiskLevel.High)]
-    public Task<string> RefundAsync(long orderId, string reason) { /* 挂起等审批 */ }
+<details>
+<summary><b>接入真实 LLM（DeepSeek / OpenAI / Ollama）</b></summary>
+
+```json
+{
+  "NexMesh": {
+    "AI": {
+      "DefaultProvider": "deepseek",
+      "Providers": {
+        "deepseek": {
+          "Type": "openai-compatible",
+          "Endpoint": "https://api.deepseek.com/v1",
+          "ApiKey": "${NEXMESH_DEEPSEEK_KEY|}",
+          "Model": "deepseek-chat"
+        },
+        "ollama": {
+          "Type": "openai-compatible",
+          "Endpoint": "http://localhost:11434/v1",
+          "Model": "qwen3:8b"
+        }
+      }
+    }
+  }
 }
 ```
+
+`${ENV|默认值}` 占位符自动从环境变量读取 Key——不落盘、不泄露。
+
+</details>
+
+---
+
+## 核心能力
+
+### 业务层 —— 写更少的代码
+
+| 能力 | 你写的 | 框架做的 |
+|---|---|---|
+| REST API | `interface IOrderBiz : IAutoApi` + `[HttpGet("{id}")]` | 路由/绑定/授权/文档/参数校验 |
+| 数据实体 | `class Order : ISoftDelete, IAudited` | 软删过滤/审计填充/并发戳/雪花ID |
+| 多租户 | `class Order : ITenantEntity` | 全局过滤/写入填充/缓存隔离 |
+| 授权 | `[Authorize]` 标注 | 默认拒绝/401/403/RequireAuthorization |
+
+### AI 层 —— 零样板接入大模型
+
+| 能力 | 你写的 | 框架做的 |
+|---|---|---|
+| AI 工具 | `[NexMeshTool("描述", Risk)]` 方法 | 注册/元数据/遥测/安全门/自纠错 |
+| 高危管控 | `Risk = NexMeshRiskLevel.High` | 挂起→审批队列→批准→按触发者身份执行 |
+| 语义缓存 | `"SemanticCache": { "Enabled": true }` | 嵌入向量→余弦命中→秒回缓存(成本降50%+) |
+| 工具召回 | `"ToolSearch": { "Enabled": true }` | 用户意图→语义排序→Top-K 进 Prompt |
+| 弹性 | `"Resilience": { }` | 重试→熔断→超时(Polly) |
+| 断连保护 | 无需写 | 浏览器关闭=模型流/计费立即终止 |
+
+### 平台层 —— 企业级基础设施
+
+| 能力 | 一行调用 |
+|---|---|
+| 认证 | `AddNexMeshAuth()` → 登录/登出/me + 登录限流 + 滑动续期 |
+| 缓存 | `AddNexMeshCache()` → L1+L2 + 防击穿 + 分布式锁 + 幂等 |
+| 定时任务 | `AddNexMeshCronJob<T>("0 2 * * *")` → Cron 调度 + 异常隔离 + 系统身份 |
+| 文件存储 | `AddNexMeshFileStorage()` → DB Blob / 本地磁盘 / OSS 同接口 |
+| Excel | `NexMeshExcel.ExportAsync(stream, rows)` |
+| 邮件 | `AddNexMeshEmail()` → SMTP |
+| 工作流 | `AddNexMeshWorkflow()` → Checkpoint 持久化 + HITL 挂起恢复 |
+
+---
+
+## 安全架构
+
+NexMesh 从第一行代码就按医疗级安全标准设计，经过 **SSS+ 双轮独立安全审查**。
+
+```
+┌────────────────────────────────────────────────────────┐
+│                    默认拒绝                              │
+│  AutoApi 未标注 → 401  ·  网关 → 401  ·  审批中心 → 401 │
+├────────────────────────────────────────────────────────┤
+│                  租户隔离（三层闭环）                     │
+│  读：全局过滤    写：自动填充    缓存：键隔离            │
+├────────────────────────────────────────────────────────┤
+│                   AI 安全门                              │
+│  High 工具 → 挂起 → 审批队列 → 批准 → 按触发者执行      │
+│  幂等键防重复 · 审批人不可伪造 · 终局语义禁止编造        │
+├────────────────────────────────────────────────────────┤
+│                  三层防御                                │
+│  断连熔断(计费停) · 上下文穿帮防护 · 参数自纠错          │
+├────────────────────────────────────────────────────────┤
+│                  信息泄露防护                             │
+│  500不暴露ex.Message · 工具异常只回类型名 · 生产关文档  │
+│  CORS默认拒绝 · 登录限流5次/分钟 · 会话惰性清扫          │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 包架构
+
+```
+                ┌──────────────┐
+                │ NexMesh.Host │  ← 业务项目只引这个
+                └──────┬───────┘
+           ┌───────────┼───────────┐
+           ▼           ▼           ▼
+    ┌────────────┐ ┌────────┐ ┌─────────┐
+    │NexMesh.Core│ │NexMesh │ │NexMesh  │
+    │  (底座)    │ │  .AI   │ │Data.FreeSql│
+    └─────┬──────┘ └───┬────┘ └─────────┘
+          │              │
+          │        ┌─────┼──────────┐
+          │        ▼     ▼          ▼
+          │  ┌─────────┐┌──────────┐┌──────────┐
+          │  │Approval ││Semantic  ││Workflow  │
+          │  │ (审批门)││  Cache   ││ (工作流) │
+          │  └─────────┘└──────────┘└──────────┘
+          │
+    ┌─────┼──────┬──────────┬─────────┐
+    ▼     ▼      ▼          ▼         ▼
+┌──────┐┌─────┐┌────────┐┌────────┐┌───────┐
+│Auth  ││Cache││Toolbox ││Worker  ││Cache  │
+│(认证)││(缓存)││(工具箱)││(调度)  ││       │
+└──────┘└─────┘└────────┘└────────┘└───────┘
+```
+
+| 包 | NuGet 依赖 |
+|---|---|
+| Core | —（纯 BCL + ASP.NET Core） |
+| AI | M.E.AI 10.11 · OpenAI 2.14 · Polly 8.8 |
+| Auth | —（纯 ASP.NET Core） |
+| Cache | StackExchange.Redis 3.4 |
+| Data.FreeSql | FreeSql 3.5 |
+| Toolbox | MiniExcel 1.46 |
+| Worker | Cronos 0.13 |
+
+---
+
+## 项目状态
+
+### ✅ 已交付（19 项核心能力全部可用）
+
+<details>
+<summary>点击展开完整清单</summary>
+
+| # | 能力 | 包 |
+|---|---|---|
+| 1 | 一行总装 | Host |
+| 2 | 约定注入 | Core |
+| 3 | AutoApi（完整参数绑定） | Core |
+| 4 | 虚拟网关（10M+ 路由） | Core |
+| 5 | 上下文显式绑定 | Core |
+| 6 | 三层防御 | Core + AI |
+| 7 | 认证 + 登录限流 | Auth |
+| 8 | 授权 + 默认拒绝 | Core + Auth |
+| 9 | AI Chat 管道 | AI |
+| 10 | AI 工具（静态+实例） | AI |
+| 11 | 审批门 | AI.Approval |
+| 12 | 语义缓存 | AI.SemanticCache |
+| 13 | ToolSearch 语义召回 | AI |
+| 14 | 工作流 + HITL | AI.Workflow |
+| 15 | 数据层约定 | Data.FreeSql |
+| 16 | 双层缓存 | Cache |
+| 17 | 定时调度 | Worker |
+| 18 | 工具箱 | Toolbox |
+| 19 | 脚手架模板 | templates |
+
+</details>
+
+### 🔄 进行中
+
+| 项 | 说明 |
+|---|---|
+| NuGet 包发布 | 发布到 NuGet.org 后模板可用 `dotnet new` |
+| CI/CD | GitHub Actions 适配新结构 |
+
+### 📋 路线图
+
+| 项 | 优先级 |
+|---|---|---|
+| OIDC 单点登录 | 中 |
+| gRPC 内部通信 | 中 |
+| 数据库 SQL 迁移 | 中 |
+| 事件总线（CAP） | 低 |
+| 性能基准 | 低 |
+| Blazor 管理界面 | 低 |
+
+---
 
 ## 文档
 
-| 文档 | 内容 |
+| 文档 | 你会学到 |
 |---|---|
 | [快速开始](docs/快速开始.md) | 5 分钟跑通第一个服务 |
-| [配置参考](docs/配置参考.md) | 全部配置节 · 环境变量 · 占位符 |
-| [错误码参考](docs/错误码参考.md) | 40xxx/50xxx 完整清单 |
-| [安全规范](docs/安全规范.md) | 安全架构 · 审批门 · 租户隔离 |
-| [架构白皮书](docs/架构白皮书.md) | 四层架构 · 设计决策 · 包依赖 |
+| [配置参考](docs/配置参考.md) | 11 个配置节全覆盖 |
+| [错误码参考](docs/错误码参考.md) | 21 个错误码 + 前端处理指南 |
+| [安全规范](docs/安全规范.md) | 安全架构 + 审批门 + 租户隔离 |
+| [架构白皮书](docs/架构白皮书.md) | 四层架构 + 包依赖 + 路线图 |
+
+---
 
 ## 技术栈
 
-.NET 10 · Microsoft.Extensions.AI 10.11 · FreeSql 3.5 · StackExchange.Redis 3.4 · Polly 8.8 · Cronos · MiniExcel
+| 类别 | 技术 |
+|---|---|
+| 运行时 | .NET 10 |
+| Web | ASP.NET Core Minimal API |
+| AI | Microsoft.Extensions.AI 10.11 |
+| ORM | FreeSql 3.5 |
+| 缓存 | StackExchange.Redis 3.4 |
+| 弹性 | Polly 8.8 |
+| 调度 | Cronos 0.13 |
+| Excel | MiniExcel 1.46 |
+| 测试 | xUnit 2.9（129 项） |
+
+---
 
 ## License
 
