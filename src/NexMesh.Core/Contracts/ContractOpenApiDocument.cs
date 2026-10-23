@@ -25,6 +25,13 @@ public static class ContractOpenApiDocument
         var paths = new JsonObject();
         var tags = new JsonObject();
 
+        // 短名冲突预检:不同命名空间的同名契约(如 A.ISysApi/B.ISysApi)若都用短名会合并成一个分组,
+        // 冲突时退回 FullName 做分组名(展示长但无歧义)
+        var shortNameCounts = ContractApiExtensions.ScanContractEndpoints(scanned)
+            .Select(e => e.Tags ?? e.ServiceType.Name)
+            .GroupBy(n => n, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
         foreach (var endpoint in ContractApiExtensions.ScanContractEndpoints(scanned))
         {
             var methodId = $"{endpoint.ServiceType.FullName}.{endpoint.Method.Name}";
@@ -33,7 +40,10 @@ public static class ContractOpenApiDocument
                 : endpoint.Method.Name.EndsWith("Async", StringComparison.Ordinal)
                     ? endpoint.Method.Name[..^5]
                     : endpoint.Method.Name;
-            var tagName = endpoint.Tags ?? endpoint.ServiceType.Name;
+            var shortName = endpoint.Tags ?? endpoint.ServiceType.Name;
+            var tagName = shortNameCounts.GetValueOrDefault(shortName) > 1
+                ? endpoint.ServiceType.FullName ?? shortName
+                : shortName;
 
             var operation = new JsonObject
             {
@@ -49,13 +59,15 @@ public static class ContractOpenApiDocument
                 {
                     continue;
                 }
-                var name = segment.Trim('{', '}').Split(':')[0];
+                var parts = segment.Trim('{', '}').Split(':');
+                var name = parts[0];
                 parameters.Add(new JsonObject
                 {
                     ["name"] = name,
                     ["in"] = "path",
                     ["required"] = true,
-                    ["schema"] = new JsonObject { ["type"] = "string" },
+                    // 路由约束({id:long}/{id:guid} 等)映射 schema 类型;无约束回退 string(实际绑定按参数 CLR 类型转换)
+                    ["schema"] = RouteConstraintSchema(parts.Length > 1 ? parts[1] : null),
                 });
             }
             foreach (var param in endpoint.Method.GetParameters())
@@ -176,6 +188,18 @@ public static class ContractOpenApiDocument
             ["traceId"] = new JsonObject { ["type"] = "string", ["nullable"] = true },
             ["timestamp"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
         },
+    };
+
+    /// <summary>ASP.NET 路由约束名 → 参数 schema(int/long→integer;guid→uuid;datetime→date-time;数值→number;无约束/未知→string)。</summary>
+    private static JsonObject RouteConstraintSchema(string? constraint) => constraint switch
+    {
+        "int" => new JsonObject { ["type"] = "integer", ["format"] = "int32" },
+        "long" => new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+        "bool" or "bools" => new JsonObject { ["type"] = "boolean" },
+        "guid" => new JsonObject { ["type"] = "string", ["format"] = "uuid" },
+        "datetime" or "datetimeoffset" => new JsonObject { ["type"] = "string", ["format"] = "date-time" },
+        "float" or "double" or "decimal" => new JsonObject { ["type"] = "number" },
+        _ => new JsonObject { ["type"] = "string" },
     };
 
     /// <summary>失败响应信封(与异常族→HTTP 状态码映射一致):success=false/code=状态码/message/errors。</summary>
@@ -544,15 +568,6 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         return enumerable?.GetGenericArguments()[0] ?? typeof(object);
     }
 
-    private static JsonObject DeepClone(JsonObject source)
-    {
-        var clone = new JsonObject();
-        foreach (var (key, value) in source)
-        {
-            clone[key] = value is JsonObject nested
-                ? DeepClone(nested)
-                : value?.DeepClone() is { } copy ? copy : null;
-        }
-        return clone;
-    }
+    private static JsonObject DeepClone(JsonObject source) =>
+        (JsonObject)source.DeepClone(); // JsonNode.DeepClone 递归全节点(含数组内对象),杜绝共享引用
 }

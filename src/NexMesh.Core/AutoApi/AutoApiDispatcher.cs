@@ -178,8 +178,11 @@ internal static class AutoApiDispatcher
     internal static bool IsSimple(Type type)
     {
         var t = Nullable.GetUnderlyingType(type) ?? type;
+        // 与 ContractSchemaGenerator.IsSimple 保持同集(含 Half):两处判定不一致会导致参数
+        // 在"query 收集/Body 判定/文档 schema"间错位——一边认一边不认时参数从文档静默消失
         return t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal)
-            || t == typeof(DateTime) || t == typeof(DateTimeOffset) || t == typeof(Guid);
+            || t == typeof(DateTime) || t == typeof(DateTimeOffset) || t == typeof(Guid)
+            || t == typeof(Half);
     }
 
     /// <summary>简单元素集合识别:T[]/List&lt;T&gt;/IList&lt;T&gt;/IEnumerable&lt;T&gt;/HashSet&lt;T&gt;(元素为简单类型)。</summary>

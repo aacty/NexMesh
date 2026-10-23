@@ -12,4 +12,8 @@
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="NexMesh.Core.Tests" />
+  </ItemGroup>
+
 </Project>

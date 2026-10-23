@@ -1,0 +1,145 @@
+namespace NexMesh.Core.Tests;
+
+using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
+using NexMesh;
+
+/// <summary>
+/// 字典六种声明形式的 schema 行为固化(二轮 code review 结论的机器断言):
+/// Dictionary/IDictionary/IReadOnlyDictionary/ConcurrentDictionary/IEnumerable&lt;KeyValuePair&lt;,&gt;&gt;/KeyValuePair&lt;,&gt;[] 
+/// → 全部收敛为 map schema(additionalProperties);KeyValuePair 本身 → key/value 对象。
+/// 附:数值分型/required/空集合示例/DeepClone 独立性/路由约束映射。
+/// </summary>
+public class SchemaShapeTests
+{
+    private static ContractSchemaGenerator Gen() => new([]);
+
+    private static JsonObject Of<T>() => Gen().Of(typeof(T), 0);
+
+    [Theory]
+    [InlineData(typeof(Dictionary<long, List<string>>))]
+    [InlineData(typeof(IDictionary<long, string>))]
+    [InlineData(typeof(IReadOnlyDictionary<long, string>))]
+    [InlineData(typeof(ConcurrentDictionary<long, string>))]
+    [InlineData(typeof(IEnumerable<KeyValuePair<long, string>>))]
+    [InlineData(typeof(KeyValuePair<long, string>[]))]
+    public void 六种字典声明_全部收敛为map_schema(Type type)
+    {
+        var schema = Gen().Of(type, 0);
+
+        Assert.Equal("object", schema["type"]!.GetValue<string>());
+        var additional = schema["additionalProperties"] as JsonObject;
+        Assert.NotNull(additional);
+    }
+
+    [Fact]
+    public void Dictionary值类型为集合_additionalProperties为数组()
+    {
+        var schema = Of<Dictionary<long, List<string>>>();
+
+        Assert.Equal("array", schema["additionalProperties"]!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void KeyValuePair本身_展开为key_value对象()
+    {
+        var schema = Of<KeyValuePair<long, string>>();
+
+        var props = schema["properties"] as JsonObject;
+        Assert.NotNull(props);
+        Assert.Contains("key", props.Select(p => p.Key));
+        Assert.Contains("value", props.Select(p => p.Key));
+        Assert.Equal("integer", props["key"]!["type"]!.GetValue<string>());
+        Assert.Equal("string", props["value"]!["type"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(typeof(float), "number", "float")]
+    [InlineData(typeof(double), "number", "double")]
+    [InlineData(typeof(decimal), "number", "double")]
+    [InlineData(typeof(long), "integer", "int64")]
+    [InlineData(typeof(ulong), "integer", "int64")]
+    [InlineData(typeof(uint), "integer", "int32")]
+    [InlineData(typeof(nint), "integer", "int64")]
+    public void 数值精确分型(Type type, string expectedType, string expectedFormat)
+    {
+        var schema = Gen().Simple(type);
+
+        Assert.Equal(expectedType, schema["type"]!.GetValue<string>());
+        Assert.Equal(expectedFormat, schema["format"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void uint与ulong_minimum为0防溢出误读()
+    {
+        Assert.Equal(0, Gen().Simple(typeof(uint))["minimum"]!.GetValue<int>());
+        Assert.Equal(0, Gen().Simple(typeof(ulong))["minimum"]!.GetValue<int>());
+        Assert.Null(Gen().Simple(typeof(int))["minimum"]);
+    }
+
+    [Fact]
+    public void Half按number处理_不掉对象分支()
+    {
+        var schema = Gen().Simple(typeof(Half));
+
+        Assert.Equal("number", schema["type"]!.GetValue<string>());
+        // 与绑定侧判定一致:AutoApiDispatcher 也认 Half(否则参数在 query/body 间错位)
+        Assert.True(AutoApi.AutoApiDispatcher.IsSimple(typeof(Half)));
+    }
+
+    [Fact]
+    public void 非可空值类型属性进required_引用类型不进()
+    {
+        var schema = Of<RequiredSample>();
+
+        var required = schema["required"]!.AsArray().Select(r => r!.GetValue<string>()).ToList();
+        Assert.Contains("id", required);
+        Assert.Contains("count", required);
+        Assert.Contains("flag", required);
+        Assert.DoesNotContain("name", required);
+        Assert.DoesNotContain("remark", required);
+    }
+
+    [Fact]
+    public void 集合示例为空数组_不输出误导性单元素()
+    {
+        var example = Gen().Example(typeof(RequiredSample), 0) as JsonObject;
+
+        Assert.NotNull(example);
+        var tags = example!["tags"] as JsonArray;
+        Assert.NotNull(tags);
+        Assert.Empty(tags!);
+    }
+
+    [Fact]
+    public void 同一类型两次生成_节点独立_修改一处不影响另处()
+    {
+        var first = Of<NestedSample>();
+        var second = Of<NestedSample>();
+
+        (first["properties"]!["items"] as JsonObject)!["description"] = "MUTATED";
+
+        Assert.NotEqual("MUTATED",
+            (second["properties"]!["items"] as JsonObject)!["description"]?.GetValue<string>());
+    }
+
+    private sealed class RequiredSample
+    {
+        public long Id { get; set; }
+        public int Count { get; set; }
+        public bool Flag { get; set; }
+        public string Name { get; set; } = "";
+        public string? Remark { get; set; }
+        public List<string> Tags { get; set; } = [];
+    }
+
+    private sealed class NestedItem
+    {
+        public long Id { get; set; }
+    }
+
+    private sealed class NestedSample
+    {
+        public List<NestedItem> Items { get; set; } = [];
+    }
+}
