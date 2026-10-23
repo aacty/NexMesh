@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "NexMesh Team",
+  "classifications": [ "Web", "WebAPI", "AI", "NexMesh" ],
+  "identity": "NexMesh.AiService",
+  "name": "NexMesh AI Service",
+  "shortName": "nexmesh-ai",
+  "tags": { "language": "C#", "type": "project" },
+  "sourceName": "NexMesh.AiService",
+  "preferNameDirectory": "true"
+}

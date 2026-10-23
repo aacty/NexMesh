@@ -1,0 +1,9 @@
+{
+  "NexMesh": {
+    "Db": {
+      "Type": "Sqlite",
+      "ConnectionString": "Data Source=nexmesh-aidemo.db",
+      "AutoSyncStructure": true
+    }
+  }
+}

@@ -1,0 +1,25 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+
+# 命名约定
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_rule.public_members_pascal.severity = suggestion
+dotnet_naming_rule.public_members_pascal.symbols = public_symbols
+dotnet_naming_rule.public_members_pascal.style = pascal_case
+dotnet_naming_symbols.public_symbols.applicable_kinds = class, struct, interface, enum, method, property, field, event, delegate
+
+[*.{json,yml,yaml,xml,props,targets}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

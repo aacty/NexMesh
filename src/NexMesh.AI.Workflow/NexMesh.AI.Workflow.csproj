@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 工作流引擎:多步骤 DAG + Checkpoint 持久化(Memory/FreeSql) + HITL 挂起恢复 + BackgroundRunner 上下文集成</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+    <ProjectReference Include="..\NexMesh.AI\NexMesh.AI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FreeSql" />
+  </ItemGroup>
+
+</Project>

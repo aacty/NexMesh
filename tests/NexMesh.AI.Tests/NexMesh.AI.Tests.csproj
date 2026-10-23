@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexMesh.AI\NexMesh.AI.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI.Workflow\NexMesh.AI.Workflow.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI.SemanticCache\NexMesh.AI.SemanticCache.csproj" />
+    <ProjectReference Include="..\NexMesh.AI.Fixtures.High\NexMesh.AI.Fixtures.High.csproj" />
+    <ProjectReference Include="..\NexMesh.AI.Fixtures.Instance\NexMesh.AI.Fixtures.Instance.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+  </ItemGroup>
+
+</Project>

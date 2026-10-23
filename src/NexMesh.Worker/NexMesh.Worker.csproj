@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 定时调度:Cron/Interval 双基类(替代 Hangfire 的轻量自研)——异常隔离不停摆/退避等待/优雅停机/系统身份快照复用 BackgroundRunner 五步纪律</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Cronos" />
+  </ItemGroup>
+
+</Project>

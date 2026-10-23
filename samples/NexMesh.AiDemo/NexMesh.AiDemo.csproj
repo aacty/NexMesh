@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>NexMesh.AiDemo</RootNamespace>
+    <Description>NexMesh v2.0 端到端示范:一行宿主总装 + 员工 CRUD(AutoApi+FreeSql)+ AI 工具 + 流式 Chat(Stub 离线可跑)</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 业务服务只需引用宿主总装包 + 审批门 + 所选数据库驱动,其余全部传递 -->
+    <ProjectReference Include="..\..\src\NexMesh.Host\NexMesh.Host.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI.Approval\NexMesh.AI.Approval.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Auth\NexMesh.Auth.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Worker\NexMesh.Worker.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Toolbox\NexMesh.Toolbox.csproj" />
+    <PackageReference Include="FreeSql.Provider.Sqlite" />
+  </ItemGroup>
+
+</Project>

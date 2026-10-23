@@ -1,0 +1,34 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- 统一仅支持 net10.0,不背多版本包袱 -->
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+  </PropertyGroup>
+
+  <!-- 包元数据:NexMesh v2.0-ai 全新基线(Green-field) -->
+  <PropertyGroup>
+    <!-- 版本策略:v2.0 AI 增强版,预发布期 2.0.0-alpha,里程碑发布时去后缀 -->
+    <Version>2.0.0-alpha.1</Version>
+    <Authors>NexMesh Team</Authors>
+    <Product>NexMesh</Product>
+    <Copyright>Copyright © NexMesh Team</Copyright>
+    <RepositoryUrl>https://gitee.com/520vip/NexMesh</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://gitee.com/520vip/NexMesh</PackageProjectUrl>
+    <PackageTags>NexMesh;dotNET;ASP.NET Core;AI;Microsoft.Extensions.AI;FreeSql;Minimal API</PackageTags>
+    <!-- 调试友好:包里嵌入源码,使用方 F12 可直接看到框架源码 -->
+    <EmbedAllSources>true</EmbedAllSources>
+    <DebugType>embedded</DebugType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

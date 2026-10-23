@@ -1,0 +1,45 @@
+# Build artifacts
+bin/
+obj/
+out/
+artifacts/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test & coverage
+TestResults/
+coverage/
+*.coverage
+*.trx
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# dotnet template local installs
+*.filelist
+
+# Logs & local config
+logs/
+*.log
+appsettings.*.local.json
+*.local.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Publish output
+publish/
+.env
+*.env
+!*.env.example

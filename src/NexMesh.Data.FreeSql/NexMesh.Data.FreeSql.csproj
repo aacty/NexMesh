@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 数据层:多库命名注册 + 软删全局过滤 + 审计自动填充 + 雪花 ID + 乐观并发(→409) + IRepository 仓储</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FreeSql" />
+  </ItemGroup>
+
+</Project>

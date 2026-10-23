@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 语义缓存:嵌入向量→余弦相似命中→秒回缓存(成本降50%+);内存暴力/Redis FT.SEARCH 双实现;ChatClient 管道装饰器</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+    <ProjectReference Include="..\NexMesh.AI\NexMesh.AI.csproj" />
+    <ProjectReference Include="..\NexMesh.Cache\NexMesh.Cache.csproj" />
+  </ItemGroup>
+
+</Project>

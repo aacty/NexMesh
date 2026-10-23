@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 审批门:High 风险工具挂起拦截 + 持久化审批队列(幂等键/上下文快照随队列落地)+ 批准后快照再水化执行 + 审批中心端点</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.AI\NexMesh.AI.csproj" />
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 审批队列持久化的可选实现(铁律只锁 NexMesh.AI 核心,本特性包允许) -->
+    <PackageReference Include="FreeSql" />
+  </ItemGroup>
+
+</Project>

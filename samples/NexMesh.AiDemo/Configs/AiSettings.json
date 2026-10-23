@@ -1,0 +1,30 @@
+{
+  "NexMesh": {
+    "AI": {
+      "DefaultProvider": "main",
+      "MaxToolsPerRequest": 10,
+      "Approval": {
+        "Enabled": true,
+        "Store": "FreeSql"
+      },
+      "Providers": {
+        "main": {
+          "Type": "stub",
+          "Model": "nexmesh-stub"
+        },
+        "deepseek": {
+          "Type": "openai-compatible",
+          "Endpoint": "https://api.deepseek.com/v1",
+          "ApiKey": "${NEXMESH_DEEPSEEK_KEY|}",
+          "Model": "deepseek-chat"
+        },
+        "ollama": {
+          "Type": "openai-compatible",
+          "Endpoint": "http://localhost:11434/v1",
+          "ApiKey": "",
+          "Model": "qwen3:8b"
+        }
+      }
+    }
+  }
+}

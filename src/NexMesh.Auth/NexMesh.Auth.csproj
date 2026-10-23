@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 认证:不透明 Token(登录路由/滑动续期/吊销) + 统一 401 + AutoApi 授权标注打通 ICurrentUser 双源</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+  </ItemGroup>
+
+</Project>

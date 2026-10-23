@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 工具箱:MiniExcel 导入导出 / 文件 Blob 存储(Db+Local)/ SMTP 邮件 / 数据脱敏</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+    <ProjectReference Include="..\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MiniExcel" />
+  </ItemGroup>
+
+</Project>

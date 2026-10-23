@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexMesh.AI\NexMesh.AI.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Core\NexMesh.Core.csproj" />
+  </ItemGroup>
+
+</Project>

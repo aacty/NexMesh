@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 服务宿主总装:一行 AddNexMeshService/UseNexMeshService 装配 配置/约定注入/FreeSql/AI 底座/中间件管道。业务开发者零 DI、零生命周期、零配置代码</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
+    <ProjectReference Include="..\NexMesh.AI\NexMesh.AI.csproj" />
+    <ProjectReference Include="..\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
+    <ProjectReference Include="..\NexMesh.Cache\NexMesh.Cache.csproj" />
+  </ItemGroup>
+
+</Project>

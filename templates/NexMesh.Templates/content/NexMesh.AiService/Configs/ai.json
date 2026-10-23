@@ -1,0 +1,27 @@
+{
+  "NexMesh": {
+    "Db": {
+      "Type": "Sqlite",
+      "ConnectionString": "Data Source=app.db",
+      "AutoSyncStructure": true
+    },
+    "AI": {
+      "DefaultProvider": "main",
+      "MaxToolsPerRequest": 10,
+      "Approval": { "Enabled": true, "Store": "FreeSql" },
+      "Providers": {
+        "main": { "Type": "stub", "Model": "stub" },
+        "deepseek": {
+          "Type": "openai-compatible",
+          "Endpoint": "https://api.deepseek.com/v1",
+          "ApiKey": "${NEXMESH_DEEPSEEK_KEY|}",
+          "Model": "deepseek-chat"
+        }
+      }
+    },
+    "Auth": {
+      "AccessTokenExpireMinutes": 720,
+      "SlidingEnabled": true
+    }
+  }
+}

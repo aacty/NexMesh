@@ -1,0 +1,71 @@
+# NexMesh Framework Rules
+
+## Project Structure
+- Features/ folder per business module (vertical slices)
+- One entity + one API file per feature
+- Program.cs: explicit registration, one line per package
+
+## Entity Pattern
+```csharp
+// Inherit only what you need
+public class Order : ISoftDelete, IAudited, IHasConcurrencyStamp, ITenantEntity
+{
+    public Guid Id { get; set; }  // or long for snowflake ID
+    // ISoftDelete
+    public bool IsDeleted { get; set; }
+    // IAudited (auto-filled)
+    public DateTime CreatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+    // IHasConcurrencyStamp (optimistic concurrency)
+    public string ConcurrencyStamp { get; set; } = "";
+    // ITenantEntity
+    public string? TenantId { get; set; }
+}
+```
+
+## API Pattern (AutoApi - recommended)
+```csharp
+public interface IOrderApi : IAutoApi
+{
+    [HttpGet("{id}")] Task<OrderDto?> FindAsync(long id);
+    [HttpPost] Task<OrderDto> CreateAsync(CreateOrderRequest req);
+}
+public class OrderApi(IRepository<Order> repo) : IOrderApi { ... }
+// Program.cs: builder.Services.AddNexMeshAutoApi(); app.MapNexMeshAutoApi();
+```
+
+## Error Handling
+```csharp
+throw new MeshException("message", errorCode: 40401, statusCode: 404);
+// Framework converts to unified JSON automatically. No try-catch needed.
+```
+
+## Pagination (mandatory)
+```csharp
+var page = await db.Get().Select<Order>()
+    .OrderByWhitelist(sortBy, whitelist: ["CreatedAt", "Amount"])
+    .ToPagedResultAsync(pageIndex, pageSize);
+// Returns: Items + TotalCount + PageIndex + PageSize + TotalPages
+```
+
+## Caching
+```csharp
+// Read: cache-first with single-flight
+var result = await cache.Get().GetOrCreateAsync(key, TimeSpan.FromMinutes(5), factory, ct);
+// Write: always invalidate after update
+await cache.Get().RemoveAsync(key);
+```
+
+## Error Codes
+- 400xx: validation, 401xx: auth, 404xx: not found
+- 40901: duplicate submit, 40902: concurrency conflict
+- 429: rate limited, 500: internal
+
+## Rules
+- DTOs are records, never expose entity internals
+- Sorting must use whitelist (no raw user input)
+- Events published after transaction commit
+- Secrets from environment variables only
+- Zero build warnings required

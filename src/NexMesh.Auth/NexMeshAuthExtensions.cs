@@ -1,0 +1,92 @@
+namespace NexMesh.Auth;
+
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NexMesh.Core;
+using NexMesh.Core.Models;
+
+/// <summary>NexMesh.Auth 注册与端点。</summary>
+public static class NexMeshAuthExtensions
+{
+    /// <summary>
+    /// 注册认证:配置绑定(NexMesh:Auth)、内存会话存储默认(Redis 实现随缓存包)、Token 服务。
+    /// 业务须实现并注册 ILoginValidator(未注册时登录端点返回配置错误)。
+    /// </summary>
+    public static IServiceCollection AddNexMeshAuth(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<NexMeshAuthOptions>()
+            .Configure(o => configuration.GetSection("NexMesh:Auth").Bind(o));
+        // 占位 Scheme:让 RequireAuthorization 的 Challenge/Forbid 走标准管线(实际认证在中间件)
+        services.AddAuthentication("NexMeshToken")
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, NexMeshTokenAuthHandler>("NexMeshToken", null);
+        services.AddAuthorization(); // [Authorize]/RequireAuthorization 的授权服务(内置,业务零心智)
+        services.AddSingleton<ITokenStore, MemoryTokenStore>();
+        services.AddSingleton<NexMeshTokenService>();
+        services.AddSingleton(new LoginRateLimiter(configuration)); // B5:登录限流(配置直接注入,不依赖容器 IConfiguration)
+        return services;
+    }
+
+    /// <summary>认证端点:POST /api/auth/login(限流)、POST /api/auth/logout、GET /api/auth/me。</summary>
+    public static IEndpointRouteBuilder MapNexMeshAuth(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost("/api/auth/login", async (LoginRequest req, HttpContext http) =>
+        {
+            // B5:per-IP 固定窗口限流,超限 429(42901)
+            var limiter = http.RequestServices.GetRequiredService<LoginRateLimiter>();
+            if (!limiter.TryPass(http))
+            {
+                return Results.Json(
+                    ApiResult<object>.Fail(42901, "登录尝试过于频繁,请稍后再试"), statusCode: 429);
+            }
+
+            var validator = http.RequestServices.GetService<ILoginValidator>();
+            if (validator is null)
+            {
+                return Results.Json(
+                    ApiResult<object>.Fail(50004, "未配置 ILoginValidator,业务侧需实现并注册登录验证"),
+                    statusCode: 500);
+            }
+
+            var user = await validator.ValidateAsync(req.Username, req.Password);
+            if (user is null)
+            {
+                return Results.Json(
+                    ApiResult<object>.Fail(40102, "用户名或密码错误"), statusCode: 401);
+            }
+
+            var session = await http.RequestServices.GetRequiredService<NexMeshTokenService>().IssueAsync(user);
+            return Results.Ok(ApiResult<LoginResponse>.Ok(new LoginResponse(
+                session.Token, session.ExpiresAt, session.UserId, session.UserName, session.TenantId)));
+        }).AllowAnonymous();
+
+        endpoints.MapPost("/api/auth/logout", async (HttpContext http, NexMeshTokenService tokens) =>
+        {
+            if (http.Items["NexMesh.Token"] is string token)
+            {
+                await tokens.RevokeAsync(token);
+            }
+            return Results.Ok(ApiResult<object>.Ok("已登出"));
+        }).RequireAuthorization();
+
+        endpoints.MapGet("/api/auth/me", (ICurrentUser user) =>
+            Results.Ok(ApiResult<object>.Ok(new
+            {
+                user.UserId,
+                user.UserName,
+                user.TenantId,
+                user.IsAuthenticated,
+            }))).RequireAuthorization();
+
+        return endpoints;
+    }
+}
+
+/// <summary>登录请求体。</summary>
+public record LoginRequest(string Username, string Password);
+
+/// <summary>登录响应。</summary>
+public record LoginResponse(string AccessToken, DateTime ExpiresAt, string UserId, string? UserName, string? TenantId);
