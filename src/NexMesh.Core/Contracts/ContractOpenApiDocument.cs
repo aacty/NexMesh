@@ -12,7 +12,7 @@ using System.Xml.Linq;
 public static class ContractOpenApiDocument
 {
 
-    /// <summary>生成 OpenAPI 3.2 文档(JSON DOM);title/version 可从 NexMesh:Scalar:Document 读取。</summary>
+    /// <summary>生成 OpenAPI 3.0.3 文档(JSON DOM);title/version 可从 NexMesh:Scalar:Document 读取。</summary>
     public static JsonObject Build(Assembly[] assemblies, string? title = null, string? version = null, string? description = null)
     {
         // 闭包扫描会排除 NexMesh.* 程序集;文档需要框架类型(PagedResult 等)的字段注释,显式追加(不动入参)
