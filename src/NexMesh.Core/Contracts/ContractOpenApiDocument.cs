@@ -16,17 +16,16 @@ public static class ContractOpenApiDocument
     /// <summary>生成 OpenAPI 3.2 文档(JSON DOM);title/version 可从 NexMesh:Scalar:Document 读取。</summary>
     public static JsonObject Build(Assembly[] assemblies, string? title = null, string? version = null, string? description = null)
     {
-        // 闭包扫描会排除 NexMesh.* 程序集;文档需要框架类型(PagedResult 等)的字段注释,显式追加
-        if (assemblies.All(a => a != typeof(ContractOpenApiDocument).Assembly))
-        {
-            assemblies = [.. assemblies, typeof(ContractOpenApiDocument).Assembly];
-        }
-        var summaries = LoadXmlSummaries(assemblies);
+        // 闭包扫描会排除 NexMesh.* 程序集;文档需要框架类型(PagedResult 等)的字段注释,显式追加(不动入参)
+        var scanned = assemblies.Contains(typeof(ContractOpenApiDocument).Assembly)
+            ? assemblies
+            : [.. assemblies, typeof(ContractOpenApiDocument).Assembly];
+        var summaries = LoadXmlSummaries(scanned);
         var schemaGen = new ContractSchemaGenerator(summaries);
         var paths = new JsonObject();
         var tags = new JsonObject();
 
-        foreach (var endpoint in ContractApiExtensions.ScanContractEndpoints(assemblies))
+        foreach (var endpoint in ContractApiExtensions.ScanContractEndpoints(scanned))
         {
             var methodId = $"{endpoint.ServiceType.FullName}.{endpoint.Method.Name}";
             var summary = summaries.TryGetValue(methodId, out var xml)
@@ -104,10 +103,14 @@ public static class ContractOpenApiDocument
                 };
             }
 
-            // 响应:信封 schema(success/code/message/data{字段级}/traceId/timestamp)+ 示例
+            // 响应:200 成功信封(success=true/code=0/data 字段级) + 常见失败状态码(错误信封,与异常族映射一致)
             var responseSchema = endpoint.DeclaredResult is { } result
                 ? EnvelopeSchema(schemaGen.Of(result.PropertyType, 0))
                 : EnvelopeSchema(null);
+            var errorContent = new JsonObject
+            {
+                ["application/json"] = new JsonObject { ["schema"] = ErrorEnvelopeSchema() },
+            };
             operation["responses"] = new JsonObject
             {
                 ["200"] = new JsonObject
@@ -117,26 +120,26 @@ public static class ContractOpenApiDocument
                         : "成功(ApiResult 信封:data 为业务载荷)",
                     ["content"] = new JsonObject
                     {
-                        ["application/json"] = new JsonObject
-                        {
-                            ["schema"] = responseSchema,
-                        },
+                        ["application/json"] = new JsonObject { ["schema"] = responseSchema },
                     },
                 },
+                ["400"] = new JsonObject { ["description"] = "业务/参数错误(信封 success=false, code=400)", ["content"] = errorContent.DeepClone() },
+                ["401"] = new JsonObject { ["description"] = "未认证或令牌无效(code=401)", ["content"] = errorContent.DeepClone() },
+                ["404"] = new JsonObject { ["description"] = "资源不存在(code=404)", ["content"] = errorContent.DeepClone() },
+                ["500"] = new JsonObject { ["description"] = "服务器内部错误(code=500,消息不暴露细节)", ["content"] = errorContent },
             };
 
-            var pathKey = "/" + endpoint.Route;
+            var pathKey = "/" + endpoint.Route.TrimStart('/');
             var verb = endpoint.Verb.ToLowerInvariant();
             var pathItem = paths[pathKey] as JsonObject ?? new JsonObject();
             pathItem[verb] = operation;
             paths[pathKey] = pathItem;
 
-            if (!tags.ContainsKey(tagName)
-                && endpoint.ServiceType.FullName is { Length: > 0 } typeName
-                && summaries.TryGetValue(typeName, out var typeSummary))
-            {
-                tags[tagName] = typeSummary;
-            }
+            // 首次出现即写入(空串占位):避免"先无注释后有"时分组描述丢失
+            tags[tagName] = endpoint.ServiceType.FullName is { Length: > 0 } typeName
+                && summaries.TryGetValue(typeName, out var typeSummary)
+                    ? typeSummary
+                    : "";
         }
 
         return new JsonObject
@@ -169,9 +172,30 @@ public static class ContractOpenApiDocument
             ["message"] = new JsonObject { ["type"] = "string" },
             ["data"] = dataSchema is not null
                 ? dataSchema
-                : new JsonObject { ["type"] = "null", ["nullable"] = true },
+                : new JsonObject { ["nullable"] = true, ["description"] = "空载荷" }, // 宽松写法,type:null 对 UI 渲染不友好
             ["traceId"] = new JsonObject { ["type"] = "string", ["nullable"] = true },
             ["timestamp"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
+        },
+    };
+
+    /// <summary>失败响应信封(与异常族→HTTP 状态码映射一致):success=false/code=状态码/message/errors。</summary>
+    private static JsonObject ErrorEnvelopeSchema() => new()
+    {
+        ["type"] = "object",
+        ["properties"] = new JsonObject
+        {
+            ["success"] = new JsonObject { ["type"] = "boolean", ["description"] = "false" },
+            ["code"] = new JsonObject { ["type"] = "integer", ["description"] = "HTTP 状态码" },
+            ["message"] = new JsonObject { ["type"] = "string", ["description"] = "错误消息(500 不暴露内部细节)" },
+            ["traceId"] = new JsonObject { ["type"] = "string", ["nullable"] = true },
+            ["timestamp"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
+            ["errors"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["nullable"] = true,
+                ["description"] = "字段级校验错误(ValidationException 专用):字段名→消息数组",
+                ["additionalProperties"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } },
+            },
         },
     };
 
@@ -236,46 +260,76 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
     public JsonObject Simple(Type type)
     {
         var underlying = Nullable.GetUnderlyingType(type) ?? type;
+        var isNullable = Nullable.GetUnderlyingType(type) is not null || !type.IsValueType;
+
+        JsonObject With(JsonObject node)
+        {
+            if (isNullable)
+            {
+                node["nullable"] = true;
+            }
+            return node;
+        }
+
         if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
         {
-            return new JsonObject { ["type"] = "string", ["format"] = "date-time", ["nullable"] = Nullable.GetUnderlyingType(type) is not null };
+            return With(new JsonObject { ["type"] = "string", ["format"] = "date-time" });
         }
         if (underlying == typeof(Guid))
         {
-            return new JsonObject { ["type"] = "string", ["format"] = "uuid" };
+            return With(new JsonObject { ["type"] = "string", ["format"] = "uuid" });
         }
         if (underlying.IsEnum)
         {
-            return new JsonObject
+            return With(new JsonObject
             {
                 ["type"] = "string",
                 ["enum"] = new JsonArray(Enum.GetNames(underlying).Select(n => (JsonNode)n!).ToArray()),
-            };
+            });
         }
-        var node = new JsonObject
+        // 数值精确分型:浮点→number(+format);64 位整→integer+int64(JS Number 精度提示);其余整型→integer
+        if (underlying == typeof(float))
+        {
+            return With(new JsonObject { ["type"] = "number", ["format"] = "float" });
+        }
+        if (underlying == typeof(double) || underlying == typeof(decimal))
+        {
+            return With(new JsonObject { ["type"] = "number", ["format"] = "double" });
+        }
+        if (underlying == typeof(long) || underlying == typeof(ulong))
+        {
+            return With(new JsonObject { ["type"] = "integer", ["format"] = "int64" });
+        }
+        return With(new JsonObject
         {
             ["type"] = underlying == typeof(bool) ? "boolean"
                 : underlying == typeof(string) || underlying == typeof(char) ? "string"
-                : "integer",
-        };
-        if (Nullable.GetUnderlyingType(type) is not null || !type.IsValueType)
-        {
-            node["nullable"] = true;
-        }
-        return node;
+                : "integer", // byte/sbyte/short/ushort/int/uint
+        });
     }
 
-    /// <summary>CLR 类型 → schema:集合→array;复杂对象→属性递归(字段中文注释);基元/枚举/日期→简单 schema。</summary>
+    /// <summary>CLR 类型 → schema:字典→additionalProperties;集合→array;复杂对象→属性递归(字段中文注释);基元/枚举/日期→简单 schema。</summary>
     public JsonObject Of(Type type, int depth)
     {
         var underlying = Nullable.GetUnderlyingType(type) ?? type;
         if (IsSimple(underlying))
         {
-            return Simple(type);
+            return Simple(type); // 含枚举/日期/Guid/基元
         }
         if (depth >= MaxDepth)
         {
             return new JsonObject { ["type"] = "object", ["description"] = TypeName(underlying) };
+        }
+        // 字典(IDictionary<,>/IReadOnlyDictionary<,> 及其实现:Dictionary/ConcurrentDictionary 等)→ additionalProperties
+        if (GetDictionaryValueType(underlying) is { } dictValue)
+        {
+            return new JsonObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = Of(dictValue, depth + 1),
+                ["description"] = "字典",
+                ["nullable"] = true,
+            };
         }
         if (underlying.IsArray || IsEnumerable(underlying))
         {
@@ -287,22 +341,9 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
                 ["nullable"] = true,
             };
         }
-        if (underlying.IsEnum)
-        {
-            return Simple(underlying);
-        }
         if (underlying == typeof(object) || underlying == typeof(System.Text.Json.JsonElement))
         {
             return new JsonObject { ["description"] = underlying == typeof(object) ? "任意结构" : "JSON 结构" };
-        }
-        if (underlying.IsGenericType && underlying.GetGenericTypeDefinition() == typeof(Dictionary<,>))
-        {
-            return new JsonObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = Of(underlying.GetGenericArguments()[1], depth + 1),
-                ["description"] = "字典",
-            };
         }
 
         if (_cache.TryGetValue(underlying, out var cached))
@@ -373,9 +414,11 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         if (underlying.IsArray || IsEnumerable(underlying))
         {
             var element = GetElementType(underlying);
-            return IsSimple(element)
-                ? new JsonArray(Example(element, depth + 1))
-                : new JsonArray(Example(element, depth + 1));
+            return new JsonArray(Example(element, depth + 1));
+        }
+        if (GetDictionaryValueType(underlying) is { } dictValue)
+        {
+            return new JsonObject { ["示例键"] = Example(dictValue, depth + 1) };
         }
         var obj = new JsonObject();
         foreach (var prop in underlying.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -396,6 +439,24 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
     private static bool IsSimple(Type type) =>
         type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)
         || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type == typeof(Guid) || type == typeof(char);
+
+    /// <summary>字典接口值类型:实现 IDictionary&lt;,&gt;/IReadOnlyDictionary&lt;,&gt; 视为字典(含 Dictionary/ConcurrentDictionary 等)。</summary>
+    private static Type? GetDictionaryValueType(Type type)
+    {
+        foreach (var i in type.GetInterfaces().Append(type))
+        {
+            if (!i.IsGenericType)
+            {
+                continue;
+            }
+            var def = i.GetGenericTypeDefinition();
+            if (def == typeof(IDictionary<,>) || def == typeof(IReadOnlyDictionary<,>))
+            {
+                return i.GetGenericArguments()[1];
+            }
+        }
+        return null;
+    }
 
     private static bool IsEnumerable(Type type) =>
         type.IsGenericType && type.GetInterfaces().Append(type).Any(i =>
