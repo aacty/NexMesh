@@ -2,6 +2,7 @@ namespace NexMesh.Data;
 
 using FreeSql;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NexMesh.Core;
 
 /// <summary>数据源模式。</summary>
@@ -72,6 +73,7 @@ public static class FreeSqlDBSourceExtensions
         string? healthCheckName = null) where TFreeSqlDBSource : class
     {
         options.Validate();
+        builder.Services.TryAddSingleton<IIdGenerator, NexMeshIdGenerator>();
         var fsb = new FreeSqlBuilder().UseConnectionString(options.DataType, options.ConnectionString);
         if (options.AutoSyncStructure)
         {

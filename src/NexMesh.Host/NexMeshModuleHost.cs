@@ -9,6 +9,7 @@ using NexMesh.Auth;
 using NexMesh.Core;
 using NexMesh.Core.Context;
 using NexMesh.Core.DependencyInjection;
+using NexMesh.Data;
 
 /// <summary>
 /// 模块式宿主入口(AddNexMeshHost/UseNexMeshHost):一行装配——
@@ -34,6 +35,7 @@ public static class NexMeshModuleHostExtensions
         builder.Services.AddSingleton(hostSet);
         builder.Services.AddNexMeshConventionServices(scanned);
         builder.Services.AddNexMeshContracts(scanned);
+        builder.Services.AddNexMeshRepositories(scanned); // IRepository 标记仓储自动 Scoped 注册
 
         if (mb.Options.AutoScanModules)
         {

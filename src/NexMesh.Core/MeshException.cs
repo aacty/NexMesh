@@ -166,8 +166,8 @@ public interface IMeshExceptionHandler
     /// <summary>执行顺序(小者先)。</summary>
     int Priority { get; }
 
-    /// <summary>true = 处理后终止管线(框架不再写默认错误响应)。</summary>
-    bool IsTerminating { get; }
+    /// <summary>true = 处理后终止管线(框架不再写默认错误响应)。默认实现返回 false。</summary>
+    bool IsTerminating => false;
 
     bool CanHandle(Exception exception);
 

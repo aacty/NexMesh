@@ -90,11 +90,19 @@ public sealed class SecurityBuilder(NexMeshBuilder builder)
 
 public static class SecurityBuilderExtensions
 {
-    /// <summary>装配认证(注册认证服务后执行回调):AddSecurity 必须在 AddNexMeshHost 回调内调用。</summary>
+    /// <summary>装配认证(注册认证服务后执行回调):AddSecurity 必须在 AddNexMeshHost 回调内调用。
+    /// 配置了 NexMesh:Authentication:Redis 连接串时自动注册 Redis 认证存储(多实例共享会话)。</summary>
     public static NexMeshBuilder AddSecurity(this NexMeshBuilder builder, Action<SecurityBuilder> configure)
     {
         builder.Services.AddNexMeshAuth(builder.Configuration);
         configure(new SecurityBuilder(builder));
+
+        var redisSection = builder.Configuration.GetSection("NexMesh:Authentication:Redis");
+        var connectionString = redisSection["ConnectionString"];
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            builder.Services.AddNexMeshRedisAuthStore(connectionString, redisSection["KeyPrefix"] ?? "nexmesh:auth:");
+        }
         return builder;
     }
 }

@@ -53,7 +53,8 @@ public static class ContractApiExtensions
             }
             else if (endpoint.Roles is { Length: > 0 })
             {
-                builder.RequireAuthorization(new AuthorizationPolicyBuilder().RequireRole(endpoint.Roles).Build());
+                // 角色以 IAuthorizeData 形式落元数据(策略由授权管线构建;OpenAPI/内省可读)
+                builder.RequireAuthorization(new AuthorizeAttribute { Roles = string.Join(",", endpoint.Roles) });
             }
             else if (endpoint.ExplicitAuthorize || !allowByDefault)
             {
