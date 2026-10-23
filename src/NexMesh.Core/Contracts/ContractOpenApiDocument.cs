@@ -69,10 +69,8 @@ public static class ContractOpenApiDocument
                     // (实际绑定按参数 CLR 类型转换,约束与 CLR 类型不一致时以此处约束为准展示)
                     ["schema"] = RouteConstraintSchema(parts.Length > 1 ? parts[1] : null),
                 };
-                // <param> XML 注释 → 参数描述
-                var methodParam = endpoint.Method.GetParameters()
-                    .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
-                if (methodParam is not null && summaries.TryGetValue($"{methodId}|param|{name}", out var pathDesc))
+                // <param> XML 注释 → 参数描述(键命中即隐含方法含该参数,无需先查参数表)
+                if (summaries.TryGetValue($"{methodId}|param|{name}", out var pathDesc))
                 {
                     pathParam["description"] = pathDesc;
                 }
@@ -372,7 +370,7 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         var underlying = Nullable.GetUnderlyingType(type) ?? type;
         if (IsSimple(underlying))
         {
-            return Simple(type); // 含枚举/日期/Guid/基元/Half
+            return Simple(type); // 含枚举/日期/Guid/基元
         }
         if (depth >= MaxDepth)
         {
