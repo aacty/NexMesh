@@ -10,14 +10,19 @@ public enum SortDirection
 /// <summary>分页请求基类:继承后按需追加过滤字段。</summary>
 public class PagedRequest
 {
+    /// <summary>页码(从 1 起)。</summary>
     public int PageIndex { get; set; } = 1;
 
+    /// <summary>每页条数。</summary>
     public int PageSize { get; set; } = 20;
 
+    /// <summary>关键字(通常按名称/编码模糊匹配)。</summary>
     public string? Keyword { get; set; }
 
+    /// <summary>排序字段名。</summary>
     public string? SortBy { get; set; }
 
+    /// <summary>排序方向。</summary>
     public SortDirection SortDirection { get; set; } = SortDirection.Ascending;
 }
 
@@ -27,18 +32,25 @@ public class PagedRequest
 /// </summary>
 public class PagedResult<T>
 {
+    /// <summary>当前页数据列表。</summary>
     public List<T> Items { get; set; } = [];
 
+    /// <summary>总条数(跨全部页)。</summary>
     public long TotalCount { get; set; }
 
+    /// <summary>当前页码(从 1 起)。</summary>
     public int PageIndex { get; set; }
 
+    /// <summary>每页条数。</summary>
     public int PageSize { get; set; }
 
+    /// <summary>总页数。</summary>
     public int TotalPages => PageSize > 0 ? (int)Math.Ceiling(TotalCount / (double)PageSize) : 0;
 
+    /// <summary>是否有下一页。</summary>
     public bool HasNextPage => PageIndex < TotalPages;
 
+    /// <summary>是否有上一页。</summary>
     public bool HasPreviousPage => PageIndex > 1;
 
     public PagedResult()

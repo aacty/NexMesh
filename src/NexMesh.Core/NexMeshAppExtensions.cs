@@ -1,6 +1,7 @@
 namespace NexMesh.Core;
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
@@ -85,19 +86,35 @@ public static class NexMeshAppExtensions
               ?? [System.Reflection.Assembly.GetEntryAssembly()!];
 
         var title = config?["NexMesh:Scalar:Document:Title"];
-        var document = ContractOpenApiDocument.Build(
-            assemblies,
-            title,
-            config?["NexMesh:Scalar:Document:Version"],
-            config?["NexMesh:Scalar:Document:Description"]);
 
-        endpoints.MapGet("/openapi/v1.json", () => Results.Text(
-            document.ToJsonString(new JsonSerializerOptions { WriteIndented = false }),
-            "application/json"));
+        // 文档一次性生成并预序列化为字符串:①请求期零反射零构建(纯缓存返回)
+        // ②JsonNode 非线程安全——并发请求重复 ToJsonString 同一实例有状态风险,预序列化彻底规避
+        // ③生成失败降级为空文档(仅警告日志),文档问题绝不阻断服务启动
+        string documentJson;
+        try
+        {
+            documentJson = ContractOpenApiDocument.Build(
+                assemblies,
+                title,
+                config?["NexMesh:Scalar:Document:Version"],
+                config?["NexMesh:Scalar:Document:Description"])
+                .ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        }
+        catch (Exception ex)
+        {
+            var logger = endpoints.ServiceProvider.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                ?.CreateLogger("NexMesh.OpenApi");
+            logger?.LogWarning(ex, "OpenAPI 文档生成失败,降级为空文档(服务继续运行)");
+            documentJson = """{"openapi":"3.2.0","info":{"title":"NexMesh API","version":"v1"},"paths":{}}""";
+        }
+
+        endpoints.MapGet("/openapi/v1.json", () => Results.Text(documentJson, "application/json"));
         endpoints.MapScalarApiReference(options =>
         {
             // Scalar 页面标题(浏览器标签页与页首)
             options.WithTitle(string.IsNullOrWhiteSpace(title) ? "NexMesh API" : title);
+            // 侧栏与搜索显示真实路由(默认只显摘要);中文摘要/字段注释保留在接口详情区
+            options.WithOperationTitleSource(Scalar.AspNetCore.OperationTitleSource.Path);
         });
         return endpoints;
     }

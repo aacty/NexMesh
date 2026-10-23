@@ -16,6 +16,11 @@ public static class ContractOpenApiDocument
     /// <summary>生成 OpenAPI 3.2 文档(JSON DOM);title/version 可从 NexMesh:Scalar:Document 读取。</summary>
     public static JsonObject Build(Assembly[] assemblies, string? title = null, string? version = null, string? description = null)
     {
+        // 闭包扫描会排除 NexMesh.* 程序集;文档需要框架类型(PagedResult 等)的字段注释,显式追加
+        if (assemblies.All(a => a != typeof(ContractOpenApiDocument).Assembly))
+        {
+            assemblies = [.. assemblies, typeof(ContractOpenApiDocument).Assembly];
+        }
         var summaries = LoadXmlSummaries(assemblies);
         var schemaGen = new ContractSchemaGenerator(summaries);
         var paths = new JsonObject();
@@ -307,10 +312,15 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         _cache[underlying] = new JsonObject { ["type"] = "object", ["description"] = TypeName(underlying) }; // 先占位防循环
 
         var properties = new JsonObject();
+        // XML 注释键用泛型定义名(NexMesh.PagedResult`1)——构造泛型的 FullName 带程序集限定,无法直配
+        var typeKey = underlying.IsGenericType
+            ? underlying.GetGenericTypeDefinition().FullName
+            : underlying.FullName;
         foreach (var prop in underlying.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             var propSchema = Of(prop.PropertyType, depth + 1);
-            if (summaries.TryGetValue($"{underlying.FullName}.{prop.Name}", out var propSummary))
+            if (typeKey is not null
+                && summaries.TryGetValue($"{typeKey}.{prop.Name}", out var propSummary))
             {
                 propSchema["description"] = propSummary; // 字段中文注释(XML P: 注释)
             }
@@ -319,7 +329,7 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         var schema = new JsonObject
         {
             ["type"] = "object",
-            ["description"] = summaries.TryGetValue(underlying.FullName ?? "", out var typeSummary)
+            ["description"] = typeKey is not null && summaries.TryGetValue(typeKey, out var typeSummary)
                 ? typeSummary
                 : TypeName(underlying),
             ["properties"] = properties,
