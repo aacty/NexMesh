@@ -8,7 +8,6 @@ on:
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_NOLOGO: 1
-  NUGET_XMLDOC_MODE: skip
 
 jobs:
   publish:
@@ -27,24 +26,42 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Compute version (0.MINOR.RUN_NUMBER)
+        id: version
+        run: |
+          # 版本策略:0.0.{run_number} 自动递增 → 0.0.999 后手动升 0.1.0
+          VERSION="0.0.${{ github.run_number }}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: $VERSION"
+
       - name: Restore
         run: dotnet restore NexMesh.slnx
+        env:
+          CI: true
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
-      - name: Build (zero warnings)
+      - name: Build
         run: dotnet build NexMesh.slnx -c Release --no-restore
+        env:
+          CI: true
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
       - name: Test
         run: dotnet test NexMesh.slnx -c Release --no-build
 
       - name: Pack
         run: dotnet pack NexMesh.slnx -c Release -o ./packages --no-build
+        env:
+          CI: true
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
       - name: List packages
         run: ls -lh ./packages/*.nupkg
 
       - name: Push to NuGet.org
         run: |
-          echo "Publishing $(ls ./packages/*.nupkg | wc -l) packages to NuGet.org..."
+          PKG_COUNT=$(ls ./packages/*.nupkg | wc -l)
+          echo "Publishing $PKG_COUNT packages (version ${{ steps.version.outputs.version }})..."
           for pkg in ./packages/*.nupkg; do
             name=$(basename "$pkg")
             echo "  → $name"
@@ -52,4 +69,4 @@ jobs:
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done
-          echo "Done."
+          echo "✅ $PKG_COUNT packages pushed successfully."

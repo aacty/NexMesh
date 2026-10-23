@@ -13,8 +13,14 @@
 
   <!-- 包元数据:统一继承,所有包可独立发布到 NuGet -->
   <PropertyGroup>
-    <!-- 版本策略:0.0.x 开发期,里程碑时升 1.0 -->
-    <Version>0.0.1-alpha.1</Version>
+    <!--
+      版本策略:0.MINOR.PATCH 开发期
+      - PATCH 由 CI 自动递增(等于 GitHub Actions run number)
+      - MINOR 达到 999 后手动升位:0.0.999 → 0.1.0 → 0.1.999 → 0.2.0 → ... → 0.9.999 → 1.0.0
+      - 本地构建默认 0.0.0(CI 覆盖为实际版本号)
+    -->
+    <Version Condition="'$(CI)' != 'true'">0.0.0</Version>
+    <Version Condition="'$(CI)' == 'true'">0.0.$(GITHUB_RUN_NUMBER)</Version>
     <Authors>NexMesh Team</Authors>
     <Product>NexMesh</Product>
     <Copyright>Copyright © NexMesh Team 2026</Copyright>
