@@ -105,7 +105,7 @@ public static class NexMeshAppExtensions
             var logger = endpoints.ServiceProvider.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 ?.CreateLogger("NexMesh.OpenApi");
             logger?.LogWarning(ex, "OpenAPI 文档生成失败,降级为空文档(服务继续运行)");
-            documentJson = """{"openapi":"3.2.0","info":{"title":"NexMesh API","version":"v1"},"paths":{}}""";
+            documentJson = """{"openapi":"3.0.3","info":{"title":"NexMesh API","version":"v1"},"paths":{}}""";
         }
 
         endpoints.MapGet("/openapi/v1.json", () => Results.Text(documentJson, "application/json"));

@@ -78,13 +78,14 @@ public class SchemaShapeTests
     }
 
     [Fact]
-    public void Half按number处理_不掉对象分支()
+    public void Half_绑定不认_schema走对象分支_取舍A行为固化()
     {
-        var schema = Gen().Simple(typeof(Half));
+        // 取舍 A:绑定规则为唯一真值源——Half 无 TypeDescriptor 转换器,绑定不认(不进 query),
+        // schema 跟随走对象分支(Half 无公共属性 → 空对象),文档与绑定行为严格一致
+        Assert.False(AutoApi.AutoApiDispatcher.IsSimple(typeof(Half)));
 
-        Assert.Equal("number", schema["type"]!.GetValue<string>());
-        // 与绑定侧判定一致:AutoApiDispatcher 也认 Half(否则参数在 query/body 间错位)
-        Assert.True(AutoApi.AutoApiDispatcher.IsSimple(typeof(Half)));
+        var schema = Gen().Of(typeof(Half), 0);
+        Assert.Equal("object", schema["type"]!.GetValue<string>());
     }
 
     [Fact]

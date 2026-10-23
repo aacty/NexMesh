@@ -11,7 +11,6 @@ using System.Xml.Linq;
 /// </summary>
 public static class ContractOpenApiDocument
 {
-    private const int MaxDepth = 4;
 
     /// <summary>生成 OpenAPI 3.2 文档(JSON DOM);title/version 可从 NexMesh:Scalar:Document 读取。</summary>
     public static JsonObject Build(Assembly[] assemblies, string? title = null, string? version = null, string? description = null)
@@ -61,14 +60,23 @@ public static class ContractOpenApiDocument
                 }
                 var parts = segment.Trim('{', '}').Split(':');
                 var name = parts[0];
-                parameters.Add(new JsonObject
+                var pathParam = new JsonObject
                 {
                     ["name"] = name,
                     ["in"] = "path",
                     ["required"] = true,
-                    // 路由约束({id:long}/{id:guid} 等)映射 schema 类型;无约束回退 string(实际绑定按参数 CLR 类型转换)
+                    // 路由约束({id:long}/{id:guid} 等)映射 schema 类型;提示性而非绑定真值
+                    // (实际绑定按参数 CLR 类型转换,约束与 CLR 类型不一致时以此处约束为准展示)
                     ["schema"] = RouteConstraintSchema(parts.Length > 1 ? parts[1] : null),
-                });
+                };
+                // <param> XML 注释 → 参数描述
+                var methodParam = endpoint.Method.GetParameters()
+                    .FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+                if (methodParam is not null && summaries.TryGetValue($"{methodId}|param|{name}", out var pathDesc))
+                {
+                    pathParam["description"] = pathDesc;
+                }
+                parameters.Add(pathParam);
             }
             foreach (var param in endpoint.Method.GetParameters())
             {
@@ -84,13 +92,18 @@ public static class ContractOpenApiDocument
                 {
                     continue; // 路由参数已收集;复杂类型走请求体
                 }
-                parameters.Add(new JsonObject
+                var queryParam = new JsonObject
                 {
                     ["name"] = param.Name,
                     ["in"] = "query",
                     ["required"] = !param.HasDefaultValue,
                     ["schema"] = schemaGen.Simple(param.ParameterType),
-                });
+                };
+                if (summaries.TryGetValue($"{methodId}|param|{param.Name}", out var queryDesc))
+                {
+                    queryParam["description"] = queryDesc; // <param> XML 注释
+                }
+                parameters.Add(queryParam);
             }
             if (parameters.Count > 0)
             {
@@ -144,19 +157,24 @@ public static class ContractOpenApiDocument
             var pathKey = "/" + endpoint.Route.TrimStart('/');
             var verb = endpoint.Verb.ToLowerInvariant();
             var pathItem = paths[pathKey] as JsonObject ?? new JsonObject();
-            pathItem[verb] = operation;
-            paths[pathKey] = pathItem;
-
-            // 首次出现即写入(空串占位):避免"先无注释后有"时分组描述丢失
-            tags[tagName] = endpoint.ServiceType.FullName is { Length: > 0 } typeName
+            // TryAdd:首个遇到的服务注释作为分组描述(后到者不覆盖)
+            tags.TryAdd(tagName,
+                endpoint.ServiceType.FullName is { Length: > 0 } typeName
                 && summaries.TryGetValue(typeName, out var typeSummary)
                     ? typeSummary
-                    : "";
+                    : "");
+            // 同 path+verb 跳过保留首个(正常不可能发生:契约引擎注册期 DetectRouteConflicts 已 fail-fast;此处纯防御)
+            if (pathItem.ContainsKey(verb))
+            {
+                continue;
+            }
+            pathItem[verb] = operation;
+            paths[pathKey] = pathItem;
         }
 
         return new JsonObject
         {
-            ["openapi"] = "3.2.0",
+            ["openapi"] = "3.0.3", // 3.0:顶层 nullable 合法(3.1+ 需 type 数组写法,工具链兼容性差)
             ["info"] = new JsonObject
             {
                 ["title"] = string.IsNullOrWhiteSpace(title) ? "NexMesh API" : title,
@@ -263,6 +281,16 @@ public static class ContractOpenApiDocument
                     {
                         result.TryAdd(name, summary);
                     }
+                    // <param name="x"> 注释:键 "方法Id|param|参数名"(path/query 参数描述用)
+                    foreach (var paramNode in member.Elements("param"))
+                    {
+                        var paramName = paramNode.Attribute("name")?.Value;
+                        var paramText = paramNode.Value.Trim();
+                        if (!string.IsNullOrWhiteSpace(paramName) && !string.IsNullOrWhiteSpace(paramText))
+                        {
+                            result.TryAdd($"{name}|param|{paramName}", paramText);
+                        }
+                    }
                 }
             }
             catch (Exception ex) when (ex is IOException or System.Xml.XmlException)
@@ -319,10 +347,6 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         if (underlying == typeof(double) || underlying == typeof(decimal))
         {
             return With(new JsonObject { ["type"] = "number", ["format"] = "double" });
-        }
-        if (underlying == typeof(Half))
-        {
-            return With(new JsonObject { ["type"] = "number", ["format"] = "float" });
         }
         if (underlying == typeof(long) || underlying == typeof(nint))
         {
@@ -552,9 +576,15 @@ internal sealed class ContractSchemaGenerator(Dictionary<string, string> summari
         return null;
     }
 
-    private static bool IsEnumerable(Type type) =>
-        type.IsGenericType && type.GetInterfaces().Append(type).Any(i =>
+    private static bool IsEnumerable(Type type)
+    {
+        if (type == typeof(System.Collections.IEnumerable))
+        {
+            return true; // 非泛型 IEnumerable(ArrayList 等):元素类型未知,按 object 处理
+        }
+        return type.GetInterfaces().Append(type).Any(i =>
             i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+    }
 
     private static Type GetElementType(Type type)
     {
