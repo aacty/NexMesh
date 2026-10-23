@@ -5,10 +5,10 @@
 **你只写业务逻辑，框架处理其余一切**
 
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](https://dotnet.microsoft.com)
-[![Tests](https://img.shields.io/badge/tests-129%20passed-brightgreen?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-178%20passed-brightgreen?style=flat-square)]()
 [![Security](https://img.shields.io/badge/security-SSS%2B%20reviewed-blue?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
-[![Packages](https://img.shields.io/badge/packages-11-purple?style=flat-square)]()
+[![Packages](https://img.shields.io/badge/NuGet-0.0.4-purple?style=flat-square)](https://www.nuget.org/packages?q=NexMesh)
 
 **企业级 AI 与业务融合框架** — 让 CRUD 和 AI 工具调用共享同一套编程模型
 
@@ -124,7 +124,7 @@ cd MyApp && dotnet run
 
 ```bash
 dotnet new web -n MyApp && cd MyApp
-dotnet add reference ../NexMesh/src/NexMesh.Host/NexMesh.Host.csproj
+dotnet add package NexMesh.Host          # 或本地源码:dotnet add reference ../NexMesh/src/NexMesh.Host/NexMesh.Host.csproj
 ```
 
 创建 `Configs/app.json`：
@@ -211,7 +211,7 @@ app.Run();
 
 | 能力 | 一行调用 |
 |---|---|
-| 认证 | `AddNexMeshAuth()` → 登录/登出/me + 登录限流 + 滑动续期 |
+| 认证 | `AddNexMeshAuth()` 装配 + `MapNexMeshAuth()` 挂端点（登录/登出/me）+ 登录限流 + 滑动续期 |
 | 缓存 | `AddNexMeshCache()` → L1+L2 + 防击穿 + 分布式锁 + 幂等 |
 | 定时任务 | `AddNexMeshCronJob<T>("0 2 * * *")` → Cron 调度 + 异常隔离 + 系统身份 |
 | 文件存储 | `AddNexMeshFileStorage()` → DB Blob / 本地磁盘 / OSS 同接口 |
@@ -290,6 +290,8 @@ NexMesh 从第一行代码就按医疗级安全标准设计，经过 **SSS+ 双�
 
 ## 项目状态
 
+**已发布 [NuGet.org](https://www.nuget.org/packages?q=NexMesh)（0.0.4，11 包）**：`dotnet add package NexMesh.Host` 即用。
+
 ### ✅ 已交付（19 项核心能力全部可用）
 
 <details>
@@ -323,7 +325,6 @@ NexMesh 从第一行代码就按医疗级安全标准设计，经过 **SSS+ 双�
 
 | 项 | 说明 |
 |---|---|
-| NuGet 包发布 | 发布到 NuGet.org 后模板可用 `dotnet new` |
 | CI/CD | GitHub Actions 适配新结构 |
 
 ### 📋 路线图
@@ -345,7 +346,7 @@ NexMesh 从第一行代码就按医疗级安全标准设计，经过 **SSS+ 双�
 |---|---|
 | [快速开始](docs/快速开始.md) | 5 分钟跑通第一个服务 |
 | [配置参考](docs/配置参考.md) | 11 个配置节全覆盖 |
-| [错误码参考](docs/错误码参考.md) | 21 个错误码 + 前端处理指南 |
+| [错误码参考](docs/错误码参考.md) | 异常族 + 40xxx/50xxx 完整清单 + 前端处理指南 |
 | [安全规范](docs/安全规范.md) | 安全架构 + 审批门 + 租户隔离 |
 | [架构白皮书](docs/架构白皮书.md) | 四层架构 + 包依赖 + 路线图 |
 
@@ -363,7 +364,7 @@ NexMesh 从第一行代码就按医疗级安全标准设计，经过 **SSS+ 双�
 | 弹性 | Polly 8.8 |
 | 调度 | Cronos 0.13 |
 | Excel | MiniExcel 1.46 |
-| 测试 | xUnit 2.9（129 项） |
+| 测试 | xUnit 2.9（178 项） |
 
 ---
 

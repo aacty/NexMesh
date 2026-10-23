@@ -4,76 +4,90 @@
 
 ## 框架概览
 
-NexMesh 是 .NET 10 企业级开发框架,核心包不绑定 API 风格(自动API/FastEndpoints/Minimal API/MVC 四种都支持)。
+NexMesh 是 .NET 10 企业级开发框架（NuGet 0.0.4，11 包）。对外约定面与 MicroMesh 一致：契约接口即 API + 统一信封 + 不透明令牌认证。
 
 ## 代码规范
 
 ### 实体定义
 ```csharp
-// 按需继承接口:ISoftDelete(软删)、IAudited(审计)、IHasConcurrencyStamp(并发)、ITenantEntity(租户)
+using NexMesh.Data;
+// 按需继承接口:ISoftDelete(软删)、IAudited(审计)、IUserAudited(操作人)、
+// IHasConcurrencyStamp(乐观并发)、ITenantEntity(租户)
 public class Order : ISoftDelete, IAudited
 {
-    public Guid Id { get; set; }    // Guid 或 long(自动雪花ID)
+    public long Id { get; set; }        // long 主键为 0 时自动雪花 ID;自增主键由数据库分配
     public string Name { get; set; } = "";
-    public bool IsDeleted { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-    public string? UpdatedBy { get; set; }
+    public bool IsDeleted { get; set; }      // 软删自动
+    public DateTime CreateTime { get; set; } // 审计自动
+    public DateTime? UpdateTime { get; set; }
 }
 ```
 
-### API 端点(自动 API 方式)
+### API 端点（契约接口模式，唯一约定）
 ```csharp
-public interface IOrderApi : IAutoApi
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using NexMesh;                            // IServiceApi / [ApiContract] / PagedResult
+using NexMesh.Core.DependencyInjection;    // IScopedService
+
+public interface IOrderApi : IServiceApi   // 路由: api/Order/{模板}
 {
     [HttpGet("{id}")]
-    Task<OrderDto?> FindAsync(long id);
+    Task<OrderDto?> GetAsync(long id);
 
     [HttpPost]
-    Task<OrderDto> CreateAsync(CreateOrderRequest req);
+    Task<OrderDto> CreateAsync(CreateOrderRequest req);   // 复杂类型自动 JSON Body
+
+    [HttpPost("page")]
+    Task<PagedResult<OrderDto>> GetPageAsync(OrderPageRequest req);
+
+    [Authorize(Roles = "Admin")]   // 默认拒绝;[AllowAnonymous] 显式放行
+    Task DeleteAsync(LongIdListRequest req);
 }
 
-public class OrderApi(IRepository<Order> repo) : IOrderApi
+public class OrderService(IRepository<Order> repo) : IOrderApi, IScopedService
 {
-    public async Task<OrderDto?> FindAsync(long id) { ... }
-    public async Task<OrderDto> CreateAsync(CreateOrderRequest req) { ... }
+    public async Task<OrderDto?> GetAsync(long id) { ... }
 }
-
-// Program.cs:
-builder.Services.AddNexMeshAutoApi();
-app.MapNexMeshAutoApi();
 ```
+路由约定：`api/{接口名去 I 去 Api}/{[Http*] 模板或方法名去 Async}`；`[ApiContract("orders")]` 自定义服务名。注册：`AddNexMeshHost`/`AddNexMeshService` 自动扫描；手动 `AddNexMeshContracts` + `MapNexMeshContracts`。
 
 ### 错误处理
 ```csharp
-// 业务异常:不需要 try-catch,框架自动转 JSON
-throw new MeshException("订单不存在", errorCode: 40401, statusCode: 404);
+// 语义异常族,不需要 try-catch,框架自动转 HTTP + 信封
+throw new BusinessException("金额必须大于 0");   // 400,消息透传
+throw new NotFoundException("订单不存在");        // 404
+throw new ValidationException(errors);            // 400 + errors 字典
+// 自定义业务码:
+throw new MeshException("库存不足", 41001, 422);
 ```
 
-### 分页(必须用 ToPagedResultAsync,禁止全表查询)
+### 分页
 ```csharp
-var page = await db.Get().Select<Order>()
-    .OrderByWhitelist(sortBy, whitelist: ["CreatedAt", "Amount"])
-    .ToPagedResultAsync(pageIndex, pageSize);
+// 返回 PagedResult<T>:Items/TotalCount/PageIndex/PageSize/TotalPages/HasNextPage/HasPreviousPage
+// 仓储分页(引擎):repo.PagedAsync(pageIndex, pageSize, where)
+// 业务自组:FreeSql 查询 Count + Page(pageIndex, pageSize).ToListAsync() 后构造 PagedResult<T>
 ```
 
-### 缓存(读走 GetOrCreateAsync,写后清缓存)
+### 缓存（读走 GetOrCreateAsync,写后清缓存）
 ```csharp
-var result = await cache.Get().GetOrCreateAsync(key, ttl, factory, ct);
-await cache.Get().RemoveAsync(key);  // 写操作后必须清
+// 注入 ICacheSource
+var result = await cache.GetOrCreateAsync(key, ttl, factory, ct);  // 防击穿
+await cache.RemoveAsync(key);                                      // 写操作后必须清
+await using var gate = await cache.TryLockAsync(key, ttl);         // 分布式锁(null=未抢到)
 ```
+
+### 响应信封（前端硬依赖）
+成功 `{"success":true,"code":0,"data":...}`——H5 端 `code!==0` 即抛错;失败 `success=false` + 业务码（40xxx/50xxx）。
 
 ### 错误码段位
-- 400xx: 参数/校验
-- 401xx: 未认证
-- 404xx: 资源不存在
-- 409xx: 冲突(40901=重复提交, 40902=并发冲突)
-- 5xxxx: 内部错误
+- 40001: 参数/校验 · 40901: 重复提交 · 40902: 并发冲突
+- 401: 未认证/令牌失效 · 429: 登录限流
+- 50000: 兜底(不暴露内部细节)
 
 ## 强制规范
-- DTO 用 record,不暴露实体内部字段
-- 排序必须走白名单
+- DTO 用 record,不暴露实体内部字段(IsDeleted/TenantId/ConcurrencyStamp)
+- 排序字段必须白名单化(防注入),禁止裸拼 orderBy
 - 事件在事务提交后发布
-- 生产密钥从环境变量注入,不入代码
+- 生产密钥走 `${ENV|}` 占位符或环境变量,不入代码
 - `dotnet build` 零警告

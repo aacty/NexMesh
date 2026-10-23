@@ -25,6 +25,7 @@
 
 ## 版本与发布
 
-- 版本集中在 `Directory.Build.props`(所有包同版本号,简化内部管理)
+- 版本号由 CI 生成：`0.0.{run_number}`（本地构建 `Directory.Build.props` 固定 0.0.0，CI 环境按 run number 编号）
+- 发布流程：推送 `v*` tag 触发 `publish.yml` → 构建 11 包 → 发 NuGet.org（`NUGET_API_KEY` secret）
+- **打 tag 是人工审核动作**——不推 tag 即不发布
 - 每次发布更新 `CHANGELOG.md`
-- 发布脚本:`tools/` 目录维护(规划中)
