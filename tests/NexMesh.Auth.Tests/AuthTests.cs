@@ -91,7 +91,7 @@ public class AuthTests : IAsyncLifetime
 
     private async Task<string?> LoginAsync(string user = "doctor", string pass = "123456")
     {
-        var response = await _client.PostAsync("/api/auth/login",
+        var response = await _client.PostAsync("/nexmesh/auth/login",
             new StringContent($"{{\"username\":\"{user}\",\"password\":\"{pass}\"}}", Encoding.UTF8, "application/json"));
         if (!response.IsSuccessStatusCode)
         {
@@ -130,7 +130,7 @@ public class AuthTests : IAsyncLifetime
     [Fact]
     public async Task 密码错误_401业务码()
     {
-        var response = await _client.PostAsync("/api/auth/login",
+        var response = await _client.PostAsync("/nexmesh/auth/login",
             new StringContent("""{"username":"doctor","password":"wrong"}""", Encoding.UTF8, "application/json"));
 
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
@@ -168,7 +168,7 @@ public class AuthTests : IAsyncLifetime
     public async Task 登出吊销_令牌立即失效()
     {
         var token = await LoginAsync();
-        var logout = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout");
+        var logout = new HttpRequestMessage(HttpMethod.Post, "/nexmesh/auth/logout");
         logout.Headers.Authorization = new("Bearer", token);
         Assert.True((await _client.SendAsync(logout)).IsSuccessStatusCode);
 
@@ -196,7 +196,7 @@ public class AuthTests : IAsyncLifetime
     public async Task me端点_返回当前身份()
     {
         var token = await LoginAsync();
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
+        var request = new HttpRequestMessage(HttpMethod.Get, "/nexmesh/auth/me");
         request.Headers.Authorization = new("Bearer", token);
         var response = await _client.SendAsync(request);
 
@@ -232,7 +232,7 @@ public class LoginRateLimitTests
         var statuses = new List<int>();
         for (var i = 0; i < 4; i++)
         {
-            var response = await client.PostAsync("/api/auth/login",
+            var response = await client.PostAsync("/nexmesh/auth/login",
                 new StringContent("""{"username":"x","password":"y"}""", System.Text.Encoding.UTF8, "application/json"));
             statuses.Add((int)response.StatusCode);
         }

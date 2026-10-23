@@ -45,10 +45,16 @@ public static class NexMeshAuthExtensions
         return services;
     }
 
-    /// <summary>认证端点:POST /api/auth/login(限流)、POST /api/auth/logout、GET /api/auth/me。</summary>
-    public static IEndpointRouteBuilder MapNexMeshAuth(this IEndpointRouteBuilder endpoints)
+    /// <summary>
+    /// 认证端点:POST {prefix}/login(限流)、POST {prefix}/logout、GET {prefix}/me。
+    /// 默认前缀 nexmesh/auth——框架保留路径(与 /health、/scalar 同类),
+    /// 不占业务的 api/{服务名} 命名空间,避免与业务版认证契约(如 api/Auth/me)路由撞车
+    /// (ASP.NET Core 路由不区分大小写,同路径两条字面量端点会 AmbiguousMatchException 全灭)。
+    /// </summary>
+    public static IEndpointRouteBuilder MapNexMeshAuth(this IEndpointRouteBuilder endpoints, string routePrefix = "nexmesh/auth")
     {
-        endpoints.MapPost("/api/auth/login", async (LoginRequest req, HttpContext http) =>
+        var prefix = routePrefix.Trim('/');
+        endpoints.MapPost($"/{prefix}/login", async (LoginRequest req, HttpContext http) =>
         {
             // B5:per-IP 固定窗口限流,超限 429(42901)
             var limiter = http.RequestServices.GetRequiredService<LoginRateLimiter>();
@@ -78,7 +84,7 @@ public static class NexMeshAuthExtensions
                 session.Token, session.ExpiresAt, session.UserId, session.UserName, session.TenantId)));
         }).AllowAnonymous();
 
-        endpoints.MapPost("/api/auth/logout", async (HttpContext http, NexMeshTokenService tokens) =>
+        endpoints.MapPost($"/{prefix}/logout", async (HttpContext http, NexMeshTokenService tokens) =>
         {
             if (http.Items["NexMesh.Token"] is string token)
             {
@@ -87,7 +93,7 @@ public static class NexMeshAuthExtensions
             return Results.Ok(ApiResult<object>.Ok("已登出"));
         }).RequireAuthorization();
 
-        endpoints.MapGet("/api/auth/me", (ICurrentUser user) =>
+        endpoints.MapGet($"/{prefix}/me", (ICurrentUser user) =>
             Results.Ok(ApiResult<object>.Ok(new
             {
                 user.UserId,

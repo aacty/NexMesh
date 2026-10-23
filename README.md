@@ -87,7 +87,7 @@ curl http://localhost:5099/health
 # → Healthy
 
 # 登录
-TOKEN=$(curl -s -X POST http://localhost:5099/api/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:5099/nexmesh/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"doctor","password":"123456"}' | jq -r '.data.accessToken')
 
