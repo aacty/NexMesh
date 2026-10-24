@@ -1,5 +1,16 @@
 # 更新日志
 
+## 未发布
+
+热点路径优化 + 新增进程内事件总线 + 质量保障机制(测试/基线/基准)。行为兼容,公共 API 变化仅 `LoginRateLimiter` 构造函数新增可选 `TimeProvider` 参数。
+
+- **契约分发委托化**:`AutoApiDispatcher` 每请求三处反射调用(方法调用 / `Task<T>.Result` 取值 / 集合 `ToArray`)替换为启动期表达式编译的委托缓存(`ContractInvokerCache`);含 ref/out 参数回退。调用开销约为原实现 36%(见 docs/框架质量契约.md 性能基线)
+- **CancellationToken 贯通**:契约响应序列化补充 `RequestAborted`
+- **时间抽象**:`LoginRateLimiter` 使用 `TimeProvider`(默认 `System`,行为不变)
+- **新包 NexMesh.Events(进程内事件总线)**:有界 Channel(容量与回压策略可配);启动期构建订阅注册表(编译委托,签名不合法启动失败);`[EventSubscribe]` 支持精确/枚举/正则匹配与细粒度重试(`NumRetries`/`RetryTimeoutMs`/`ExceptionTypes`);处理器经 `INexMeshBackgroundRunner` 执行;停机限时排干并上报剩余计数;OTel 指标 `nexmesh.events`(`published`/`retried`/`dropped`/`queue_depth`);`IEventMonitor`/`IEventFaultHandler` 扩展点。可靠性语义(异常隔离/取消语义/执行顺序/投递守恒等)见 docs/框架质量契约.md,共 26 项测试
+- **质量保障机制**:tests/NexMesh.ArchTests(依赖规则测试 + PublicApiGenerator 公共 API 基线);benchmarks/NexMesh.Benchmarks(契约分发/登录限流/事件发布/上下文槽位四项基准)
+- **文档**:新增 docs/包实战案例.md(各包分步骤接入案例)与 docs/框架质量契约.md(质量保障机制)
+
 ## v0.0.4 (2026-10-23)
 
 Scalar 契约文档自生成器（自 v0.0.3 起 20 个提交）。
@@ -28,7 +39,7 @@ Scalar 契约文档自生成器（自 v0.0.3 起 20 个提交）。
 
 ## v0.0.1 (2026-10-22)
 
-从零重建（Green-field），基于白皮书审核结论 + 双轮 SSS+ 安全审查。
+从零重建（Green-field），基于白皮书审核结论与双轮安全审查。
 
 ### 11 个包
 
@@ -44,7 +55,7 @@ Scalar 契约文档自生成器（自 v0.0.3 起 20 个提交）。
 - **NexMesh.Toolbox**：Excel · 文件 Blob 存储 · 邮件 · 脱敏
 - **NexMesh.Worker**：Cron/Interval 调度 · 异常隔离 · 系统身份快照
 
-### 安全体系（SSS+ 双轮审查通过）
+### 安全体系(双轮审查通过)
 
 - 默认拒绝三件套（契约端点 / 网关 / 审批中心）
 - 租户隔离三层闭环（全局过滤 / 写入填充 / 缓存键隔离）
