@@ -1,8 +1,8 @@
 # 更新日志
 
-## 未发布
+## v0.0.5 (2026-10-25)
 
-热点路径优化 + 新增进程内事件总线 + 质量保障机制(测试/基线/基准)。行为兼容,公共 API 变化仅 `LoginRateLimiter` 构造函数新增可选 `TimeProvider` 参数。
+新增进程内事件总线 + 契约分发委托化 + 质量保障机制。行为兼容,公共 API 变化仅 `LoginRateLimiter` 构造函数新增可选 `TimeProvider` 参数;新增包 NexMesh.Events。
 
 - **契约分发委托化**:`AutoApiDispatcher` 每请求三处反射调用(方法调用 / `Task<T>.Result` 取值 / 集合 `ToArray`)替换为启动期表达式编译的委托缓存(`ContractInvokerCache`);含 ref/out 参数回退。调用开销约为原实现 36%(见 docs/框架质量契约.md 性能基线)
 - **CancellationToken 贯通**:契约响应序列化补充 `RequestAborted`
