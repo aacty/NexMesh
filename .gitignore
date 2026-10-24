@@ -45,3 +45,7 @@ publish/
 !*.env.example
 artifacts/
 packages/
+
+# 基准产物与演示运行时数据
+**/BenchmarkDotNet.Artifacts/
+samples/**/*.db

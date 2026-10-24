@@ -50,22 +50,32 @@ internal static class AutoApiDispatcher
         }
 
         object? result;
-        try
+        if (ContractInvokerCache.GetInvoker(endpoint.Method) is { } invoke)
         {
-            result = endpoint.Method.Invoke(service, args);
+            // 编译委托直调:业务异常原样抛出(无 TargetInvocationException 包装)
+            result = invoke(service, args);
         }
-        catch (TargetInvocationException ex)
+        else
         {
-            // 还原业务原始异常,交给全局异常中间件按类型分诊
-            ExceptionDispatchInfo.Capture(ex.InnerException ?? ex).Throw();
-            return;
+            try
+            {
+                result = endpoint.Method.Invoke(service, args);
+            }
+            catch (TargetInvocationException ex)
+            {
+                // 还原业务原始异常,交给全局异常中间件按类型分诊
+                ExceptionDispatchInfo.Capture(ex.InnerException ?? ex).Throw();
+                return;
+            }
         }
 
         if (result is Task task)
         {
             await task;
-            // void/Task → 空载荷成功信封(200);Task<T> → 取声明 Result 包装
-            var value = endpoint.DeclaredResult != null ? endpoint.DeclaredResult.GetValue(task) : null;
+            // void/Task → 空载荷成功信封(200);Task<T> → 取声明 Result 包装(编译委托,零反射)
+            var value = endpoint.DeclaredResult is not null
+                ? ContractInvokerCache.GetTaskResultGetter(endpoint.DeclaredResult)(task)
+                : null;
             await WriteResultAsync(context, value);
             return;
         }
@@ -239,9 +249,9 @@ internal static class AutoApiDispatcher
         {
             list.Add(ConvertElement(item ?? "", elementType, parameter));
         }
-        // Array 参数:List → ToArray
+        // Array 参数:List → ToArray(编译委托,零反射)
         return parameter.ParameterType.IsArray
-            ? concreteListType.GetMethod("ToArray")!.Invoke(list, null)
+            ? ContractInvokerCache.GetCollectionToArray(elementType)(list)
             : list;
     }
 
@@ -323,6 +333,6 @@ internal static class AutoApiDispatcher
         // 统一 ApiResult 信封:Success=true/Code=0/Data(含 null)/TraceId(经宿主 JsonOptions 序列化)
         var envelope = ApiResult<object?>.Ok(result);
         envelope.TraceId = System.Diagnostics.Activity.Current?.TraceId.ToString();
-        await context.Response.WriteAsJsonAsync(envelope);
+        await context.Response.WriteAsJsonAsync(envelope, context.RequestAborted);
     }
 }

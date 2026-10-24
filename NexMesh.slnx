@@ -10,10 +10,14 @@
     <Project Path="src/NexMesh.Toolbox/NexMesh.Toolbox.csproj" />
     <Project Path="src/NexMesh.AI.SemanticCache/NexMesh.AI.SemanticCache.csproj" />
     <Project Path="src/NexMesh.AI.Workflow/NexMesh.AI.Workflow.csproj" />
+    <Project Path="src/NexMesh.Events/NexMesh.Events.csproj" />
     <Project Path="src/NexMesh.Host/NexMesh.Host.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/NexMesh.AiDemo/NexMesh.AiDemo.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/NexMesh.Benchmarks/NexMesh.Benchmarks.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NexMesh.Core.Tests/NexMesh.Core.Tests.csproj" />
@@ -29,5 +33,7 @@
     <Project Path="tests/NexMesh.Host.Tests/NexMesh.Host.Tests.csproj" />
     <Project Path="tests/NexMesh.AI.Fixtures.High/NexMesh.AI.Fixtures.High.csproj" />
     <Project Path="tests/NexMesh.AI.Fixtures.Instance/NexMesh.AI.Fixtures.Instance.csproj" />
+    <Project Path="tests/NexMesh.Events.Tests/NexMesh.Events.Tests.csproj" />
+    <Project Path="tests/NexMesh.ArchTests/NexMesh.ArchTests.csproj" />
   </Folder>
 </Solution>

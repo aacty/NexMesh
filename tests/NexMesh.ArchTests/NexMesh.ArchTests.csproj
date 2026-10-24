@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexMesh.Core\NexMesh.Core.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI\NexMesh.AI.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI.Approval\NexMesh.AI.Approval.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Auth\NexMesh.Auth.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Cache\NexMesh.Cache.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Events\NexMesh.Events.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="PublicApiGenerator" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 公共 API 基线随源码入库并拷贝到输出目录 -->
+    <Content Include="ApiBaselines\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

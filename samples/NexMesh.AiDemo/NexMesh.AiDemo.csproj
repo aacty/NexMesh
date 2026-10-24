@@ -12,6 +12,7 @@
     <ProjectReference Include="..\..\src\NexMesh.Auth\NexMesh.Auth.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Worker\NexMesh.Worker.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Toolbox\NexMesh.Toolbox.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Events\NexMesh.Events.csproj" />
     <PackageReference Include="FreeSql.Provider.Sqlite" />
   </ItemGroup>
 

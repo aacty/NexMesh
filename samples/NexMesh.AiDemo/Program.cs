@@ -5,6 +5,7 @@ using NexMesh.AI.Approval;
 using NexMesh.Auth;
 using NexMesh.AI.Core;
 using NexMesh.AI.Tools;
+using NexMesh.Events;
 using NexMesh.AiDemo.Entities;
 using NexMesh.Host;
 using NexMesh.Toolbox;
@@ -21,6 +22,7 @@ builder.Services.AddNexMeshCronJob<NexMesh.AiDemo.Jobs.EmployeeReportJob>("* * *
 builder.Services.AddNexMeshFileStorage(builder.Configuration); // 文件存储:DB Blob(事务库)
 builder.Services.AddNexMeshAuth(builder.Configuration);
 builder.Services.AddTransient<ILoginValidator, NexMesh.AiDemo.Services.DemoLoginValidator>();
+builder.Services.AddNexMeshEvents(builder.Configuration); // 进程内事件总线:订阅者自动发现(含 Events/DemoEventSubscriber)
 
 var app = builder.Build();
 
@@ -96,6 +98,20 @@ app.MapPost("/api/ai/chat", async (
 // 审批中心:GET /api/approvals/pending、/{id}、POST /{id}/approve、/{id}/reject
 app.MapNexMeshAuth(); // 登录/登出/me
 app.MapNexMeshApprovals(requireAuthorization: true); // 审批中心:须持有效 Token
+
+// 事件总线演示:发布即返回,订阅者异步处理(日志可见;重试演示观察 nexmesh.events.retried 指标)
+app.MapPost("/api/events/demo", async (NexMesh.Events.IEventPublisher publisher) =>
+{
+    await publisher.PublishAsync("demo:employee:created", new { Name = "演示员工", CreatedAt = DateTime.Now });
+    return Results.Ok(new { message = "事件已发布,处理异步进行(见日志)" });
+});
+
+// 重试/故障演示:发布后观察日志中的重试与"重试耗尽进故障处理"
+app.MapPost("/api/events/flaky", async (NexMesh.Events.IEventPublisher publisher) =>
+{
+    await publisher.PublishAsync("demo:order:flaky", new { OrderId = 42 });
+    return Results.Ok(new { message = "不稳定事件已发布(日志可见 3 次尝试后进故障处理)" });
+});
 
 app.Run();
 

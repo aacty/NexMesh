@@ -1,0 +1,395 @@
+namespace NexMesh
+{
+    [System.AttributeUsage(System.AttributeTargets.Interface)]
+    public sealed class ApiContractAttribute : System.Attribute
+    {
+        public ApiContractAttribute() { }
+        public ApiContractAttribute(string name) { }
+        public string? Name { get; }
+    }
+    public class ApiResult : NexMesh.ApiResultBase
+    {
+        public ApiResult() { }
+        public static NexMesh.ApiResult Fail(string message, int code = 400) { }
+        public static NexMesh.ApiResult Ok(string message = "") { }
+    }
+    public abstract class ApiResultBase
+    {
+        protected ApiResultBase() { }
+        public int Code { get; set; }
+        public System.Collections.Generic.IDictionary<string, string[]>? Errors { get; set; }
+        public string Message { get; set; }
+        public bool Success { get; set; }
+        public System.DateTimeOffset Timestamp { get; set; }
+        public string? TraceId { get; set; }
+    }
+    public class ApiResult<T> : NexMesh.ApiResult
+    {
+        public ApiResult() { }
+        public T Data { get; set; }
+        public new static NexMesh.ApiResult<T> Fail(string message, int code = 400) { }
+        public static NexMesh.ApiResult<T> Ok(T? data, string message = "") { }
+    }
+    public class BadRequestException : NexMesh.MeshException
+    {
+        public BadRequestException(string message) { }
+    }
+    public class BusinessException : NexMesh.MeshException
+    {
+        public BusinessException(string message) { }
+        public BusinessException(string message, System.Net.HttpStatusCode statusCode) { }
+    }
+    public static class ContractApiExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshContracts(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, params System.Reflection.Assembly[] assemblies) { }
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshContracts(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints, params System.Reflection.Assembly[] assemblies) { }
+    }
+    public static class ContractOpenApiDocument
+    {
+        public static System.Text.Json.Nodes.JsonObject Build(System.Reflection.Assembly[] assemblies, string? title = null, string? version = null, string? description = null) { }
+    }
+    public class DuplicateEntityException : NexMesh.MeshException
+    {
+        public DuplicateEntityException(string message) { }
+    }
+    public sealed class ExceptionContext : System.IEquatable<NexMesh.ExceptionContext>
+    {
+        public ExceptionContext(Microsoft.AspNetCore.Http.HttpContext HttpContext, System.Exception Exception, NexMesh.ApiResult Error) { }
+        public NexMesh.ApiResult Error { get; init; }
+        public System.Exception Exception { get; init; }
+        public Microsoft.AspNetCore.Http.HttpContext HttpContext { get; init; }
+    }
+    public class ForbiddenException : NexMesh.MeshException
+    {
+        public ForbiddenException(string message) { }
+    }
+    [System.AttributeUsage(System.AttributeTargets.Parameter)]
+    public sealed class FromFormAttribute : System.Attribute
+    {
+        public FromFormAttribute() { }
+    }
+    public interface IMeshExceptionHandler
+    {
+        bool IsTerminating { get; }
+        int Priority { get; }
+        bool CanHandle(System.Exception exception);
+        System.Threading.Tasks.Task HandleAsync(NexMesh.ExceptionContext context);
+    }
+    public interface IServiceApi { }
+    public class InfrastructureException : NexMesh.MeshException
+    {
+        public InfrastructureException(string message) { }
+        public InfrastructureException(string message, System.Exception innerException) { }
+        public override bool ShouldExposeMessage { get; }
+    }
+    public class MeshException : System.Exception
+    {
+        public MeshException(string message, int errorCode = 40000, int statusCode = 400) { }
+        public MeshException(string message, System.Net.HttpStatusCode statusCode, System.Exception? innerException = null) { }
+        public int ErrorCode { get; }
+        public System.Net.HttpStatusCode HttpStatusCode { get; }
+        public virtual bool ShouldExposeMessage { get; }
+        public int StatusCode { get; }
+    }
+    public class NotFoundException : NexMesh.MeshException
+    {
+        public NotFoundException(string message) { }
+    }
+    public class PagedRequest
+    {
+        public PagedRequest() { }
+        public string? Keyword { get; set; }
+        public int PageIndex { get; set; }
+        public int PageSize { get; set; }
+        public string? SortBy { get; set; }
+        public NexMesh.SortDirection SortDirection { get; set; }
+    }
+    public class PagedResult<T>
+    {
+        public PagedResult() { }
+        public PagedResult(System.Collections.Generic.List<T> items, long totalCount, int pageIndex, int pageSize) { }
+        public bool HasNextPage { get; }
+        public bool HasPreviousPage { get; }
+        public System.Collections.Generic.List<T> Items { get; set; }
+        public int PageIndex { get; set; }
+        public int PageSize { get; set; }
+        public long TotalCount { get; set; }
+        public int TotalPages { get; }
+        public static NexMesh.PagedResult<T> From(System.Collections.Generic.IList<T> items, int pageIndex, int pageSize) { }
+    }
+    public class RemoteServiceException : NexMesh.MeshException
+    {
+        public RemoteServiceException(string serviceName, string message, System.Net.HttpStatusCode statusCode = 502) { }
+        public string ServiceName { get; }
+    }
+    public class ServiceTimeoutException : NexMesh.MeshException
+    {
+        public ServiceTimeoutException(string serviceName, string message) { }
+        public string ServiceName { get; }
+    }
+    public class ServiceUnavailableException : NexMesh.MeshException
+    {
+        public ServiceUnavailableException(string serviceName, string message) { }
+        public string ServiceName { get; }
+    }
+    public enum SortDirection
+    {
+        Ascending = 0,
+        Descending = 1,
+    }
+    public class UnauthorizedException : NexMesh.MeshException
+    {
+        public UnauthorizedException(string message) { }
+    }
+    public class ValidationException : NexMesh.MeshException
+    {
+        public ValidationException(string message) { }
+        public ValidationException(string message, System.Collections.Generic.IDictionary<string, string[]> errors) { }
+        public System.Collections.Generic.IDictionary<string, string[]> Errors { get; }
+    }
+}
+namespace NexMesh.Core
+{
+    public abstract class AppModule : NexMesh.Core.INexMeshModule
+    {
+        protected AppModule() { }
+        public virtual string Name { get; }
+        public virtual NexMesh.Core.ModulePhase Phase { get; }
+        public virtual int Priority { get; }
+        public virtual void ConfigureApplication(Microsoft.AspNetCore.Builder.WebApplication app) { }
+        public virtual void ConfigureServices(NexMesh.Core.NexMeshBuilder builder) { }
+    }
+    [System.AttributeUsage(System.AttributeTargets.Property)]
+    public sealed class ClaimTypeAttribute : System.Attribute
+    {
+        public ClaimTypeAttribute(string claimType) { }
+        public string ClaimType { get; }
+    }
+    public sealed class CurrentUser : NexMesh.Core.ICurrentUser
+    {
+        public CurrentUser(NexMesh.Core.Context.INexMeshContextAccessor ambient, Microsoft.AspNetCore.Http.IHttpContextAccessor http) { }
+        public string? AuthenticationType { get; }
+        public string? Email { get; }
+        public bool IsAuthenticated { get; }
+        public System.Security.Claims.ClaimsPrincipal? Principal { get; }
+        public System.Collections.Generic.IReadOnlyList<string> Roles { get; }
+        public string? TenantId { get; }
+        public string? UserId { get; }
+        public string? UserName { get; }
+        public System.Security.Claims.Claim? FindClaim(string claimType) { }
+        public string? FindClaimValue(string claimType) { }
+        public System.Collections.Generic.IReadOnlyList<string> FindClaimValues(string claimType) { }
+        public bool IsInRole(string role) { }
+    }
+    public sealed class CurrentUser<TUser> : NexMesh.Core.ICurrentUser, NexMesh.Core.ICurrentUser<TUser>
+        where TUser :  class, new ()
+    {
+        public CurrentUser(NexMesh.Core.ICurrentUser inner) { }
+        public string? AuthenticationType { get; }
+        public string? Email { get; }
+        public bool IsAuthenticated { get; }
+        public System.Security.Claims.ClaimsPrincipal? Principal { get; }
+        public System.Collections.Generic.IReadOnlyList<string> Roles { get; }
+        public string? TenantId { get; }
+        public TUser User { get; }
+        public string? UserId { get; }
+        public string? UserName { get; }
+        public System.Security.Claims.Claim? FindClaim(string claimType) { }
+        public string? FindClaimValue(string claimType) { }
+        public System.Collections.Generic.IReadOnlyList<string> FindClaimValues(string claimType) { }
+        public bool IsInRole(string role) { }
+    }
+    public sealed class HostAssemblySet : System.IEquatable<NexMesh.Core.HostAssemblySet>
+    {
+        public HostAssemblySet(System.Reflection.Assembly[] Assemblies) { }
+        public System.Reflection.Assembly[] Assemblies { get; init; }
+        public System.Collections.Generic.List<NexMesh.Core.INexMeshModule> Modules { get; init; }
+    }
+    public interface ICurrentUser
+    {
+        string? AuthenticationType { get; }
+        string? Email { get; }
+        bool IsAuthenticated { get; }
+        System.Security.Claims.ClaimsPrincipal? Principal { get; }
+        System.Collections.Generic.IReadOnlyList<string> Roles { get; }
+        string? TenantId { get; }
+        string? UserId { get; }
+        string? UserName { get; }
+        System.Security.Claims.Claim? FindClaim(string claimType);
+        string? FindClaimValue(string claimType);
+        System.Collections.Generic.IReadOnlyList<string> FindClaimValues(string claimType);
+        bool IsInRole(string role);
+    }
+    public interface ICurrentUser<out TUser> : NexMesh.Core.ICurrentUser
+        where out TUser :  class
+    {
+        TUser User { get; }
+    }
+    public interface INexMeshModule
+    {
+        string Name { get; }
+        NexMesh.Core.ModulePhase Phase { get; }
+        int Priority { get; }
+        void ConfigureApplication(Microsoft.AspNetCore.Builder.WebApplication app);
+        void ConfigureServices(NexMesh.Core.NexMeshBuilder builder);
+    }
+    public static class ModuleHostAssemblyScanner
+    {
+        public static System.Reflection.Assembly[] Closure(System.Reflection.Assembly[] assemblies) { }
+    }
+    public enum ModulePhase
+    {
+        Platform = 0,
+        Framework = 1,
+        Security = 2,
+        Observability = 3,
+        Component = 4,
+        Application = 5,
+    }
+    public static class NexMeshAppExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMesh(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration? configuration = null) { }
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshDocs(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints, bool force = false, params System.Reflection.Assembly[] assemblies) { }
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshHealth(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints) { }
+        public static Microsoft.AspNetCore.Builder.IApplicationBuilder UseNexMeshExceptionHandling(this Microsoft.AspNetCore.Builder.IApplicationBuilder app) { }
+    }
+    public sealed class NexMeshBuilder
+    {
+        public NexMeshBuilder(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration) { }
+        public Microsoft.Extensions.Configuration.IConfiguration Configuration { get; }
+        public System.Collections.Generic.List<NexMesh.Core.INexMeshModule> Modules { get; }
+        public NexMesh.Core.NexMeshHostOptions Options { get; }
+        public Microsoft.Extensions.DependencyInjection.IServiceCollection Services { get; }
+        public NexMesh.Core.NexMeshBuilder AddModule(NexMesh.Core.INexMeshModule module) { }
+        public NexMesh.Core.NexMeshBuilder AddModule<TModule>()
+            where TModule : NexMesh.Core.INexMeshModule, new () { }
+        public NexMesh.Core.NexMeshBuilder AutoScanModules(params System.Reflection.Assembly[] assemblies) { }
+        public TOptions BindOptions<TOptions>(string sectionPath)
+            where TOptions :  class, new () { }
+    }
+    public sealed class NexMeshHostOptions
+    {
+        public NexMeshHostOptions() { }
+        public bool AutoScanModules { get; set; }
+        public bool EnableModuleLifecycleLogging { get; set; }
+        public int GrpcPort { get; set; }
+        public int HttpPort { get; set; }
+        public string IP { get; set; }
+    }
+    public static class UserClaimsMapper
+    {
+        public static TUser? FromClaims<TUser>(System.Collections.Generic.IEnumerable<System.Security.Claims.Claim> claims)
+            where TUser :  class, new () { }
+        public static System.Collections.Generic.List<System.Security.Claims.Claim> ToClaims<TUser>(TUser user) { }
+    }
+}
+namespace NexMesh.Core.AutoApi
+{
+    public sealed class AutoApiEndpoint : System.IEquatable<NexMesh.Core.AutoApi.AutoApiEndpoint>
+    {
+        public AutoApiEndpoint(System.Type ServiceType, System.Reflection.MethodInfo Method, string Verb, string Route, System.Reflection.ParameterInfo? BodyParam, System.Reflection.PropertyInfo? DeclaredResult) { }
+        public bool AllowAnonymous { get; init; }
+        public System.Reflection.ParameterInfo? BodyParam { get; init; }
+        public System.Reflection.PropertyInfo? DeclaredResult { get; init; }
+        public bool ExplicitAuthorize { get; init; }
+        public System.Reflection.MethodInfo Method { get; init; }
+        public string[]? Roles { get; init; }
+        public string Route { get; init; }
+        public System.Type ServiceType { get; init; }
+        public string? Tags { get; init; }
+        public string Verb { get; init; }
+    }
+    public static class AutoApiGatewayExtensions
+    {
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshContractGateway(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints, params System.Reflection.Assembly[] assemblies) { }
+    }
+    public sealed class LogicalRoute : System.IEquatable<NexMesh.Core.AutoApi.LogicalRoute>
+    {
+        public LogicalRoute(string Verb, string Route, NexMesh.Core.AutoApi.AutoApiEndpoint Endpoint) { }
+        public NexMesh.Core.AutoApi.AutoApiEndpoint Endpoint { get; init; }
+        public string Route { get; init; }
+        public string Verb { get; init; }
+    }
+    public sealed class LogicalRouteTable
+    {
+        public LogicalRouteTable() { }
+        public int Count { get; }
+        public bool ContainsPath(string path, string verb) { }
+        public void Register(NexMesh.Core.AutoApi.LogicalRoute route) { }
+        public bool TryMatch(string path, string verb, out NexMesh.Core.AutoApi.LogicalRoute route, out System.Collections.Generic.IReadOnlyDictionary<string, string> routeValues) { }
+    }
+}
+namespace NexMesh.Core.Configuration
+{
+    public static class NexMeshConfigExtensions
+    {
+        public static Microsoft.Extensions.Configuration.IConfigurationBuilder AddNexMeshConfig(this Microsoft.Extensions.Configuration.IConfigurationBuilder builder, string directory = "Configs", string? environment = null) { }
+    }
+}
+namespace NexMesh.Core.Context
+{
+    public sealed class AsyncLocalNexMeshContextAccessor : NexMesh.Core.Context.INexMeshContextAccessor
+    {
+        public AsyncLocalNexMeshContextAccessor() { }
+        public NexMesh.Core.Context.NexMeshContext? Current { get; }
+        public System.IDisposable Enter(NexMesh.Core.Context.NexMeshContext context) { }
+    }
+    public interface INexMeshBackgroundRunner
+    {
+        System.Threading.Tasks.Task RunAsync(NexMesh.Core.Context.NexMeshContext? context, System.Func<System.IServiceProvider, System.Threading.CancellationToken, System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = default);
+    }
+    public interface INexMeshContextAccessor
+    {
+        NexMesh.Core.Context.NexMeshContext? Current { get; }
+        System.IDisposable Enter(NexMesh.Core.Context.NexMeshContext context);
+    }
+    public sealed class NexMeshBackgroundRunner : NexMesh.Core.Context.INexMeshBackgroundRunner
+    {
+        public NexMeshBackgroundRunner(System.IServiceProvider rootProvider, Microsoft.Extensions.Hosting.IHostApplicationLifetime lifetime, NexMesh.Core.Context.INexMeshContextAccessor accessor) { }
+        public System.Threading.Tasks.Task RunAsync(NexMesh.Core.Context.NexMeshContext? context, System.Func<System.IServiceProvider, System.Threading.CancellationToken, System.Threading.Tasks.Task> work, System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class NexMeshContext : System.IEquatable<NexMesh.Core.Context.NexMeshContext>
+    {
+        public NexMeshContext() { }
+        public System.Collections.Generic.IReadOnlyDictionary<string, string> Claims { get; init; }
+        public string? TenantId { get; init; }
+        public System.Diagnostics.ActivityContext TraceContext { get; init; }
+        public string? UserId { get; init; }
+        public string? UserName { get; init; }
+        public System.Collections.Generic.IReadOnlyDictionary<string, string> ToMessageHeaders() { }
+        public static NexMesh.Core.Context.NexMeshContext? FromMessageHeaders(System.Collections.Generic.IReadOnlyDictionary<string, string> headers) { }
+    }
+    public static class NexMeshContextAppExtensions
+    {
+        public static Microsoft.AspNetCore.Builder.IApplicationBuilder UseNexMeshContext(this Microsoft.AspNetCore.Builder.IApplicationBuilder app) { }
+    }
+    public class NexMeshContextMiddleware
+    {
+        public NexMeshContextMiddleware(Microsoft.AspNetCore.Http.RequestDelegate next) { }
+        public System.Threading.Tasks.Task InvokeAsync(Microsoft.AspNetCore.Http.HttpContext context, NexMesh.Core.Context.INexMeshContextAccessor accessor) { }
+    }
+    public static class TenantHelper
+    {
+        public static string? Current { get; }
+        public static System.IDisposable Enter(string? tenantId) { }
+        public static void Set(string? tenantId) { }
+    }
+}
+namespace NexMesh.Core.DependencyInjection
+{
+    public static class ConventionServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshConventionServices(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, params System.Reflection.Assembly[] assemblies) { }
+    }
+    public interface IScopedService { }
+    public interface ISingletonService { }
+    public interface ITransientService { }
+}
+namespace NexMesh.Core.Middlewares
+{
+    public class MeshExceptionMiddleware
+    {
+        public MeshExceptionMiddleware(Microsoft.AspNetCore.Http.RequestDelegate next, Microsoft.Extensions.Logging.ILogger<NexMesh.Core.Middlewares.MeshExceptionMiddleware> logger) { }
+        public System.Threading.Tasks.Task InvokeAsync(Microsoft.AspNetCore.Http.HttpContext context) { }
+    }
+}
