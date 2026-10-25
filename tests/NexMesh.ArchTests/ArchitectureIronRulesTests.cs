@@ -65,6 +65,18 @@ public class ArchitectureIronRulesTests
         Assert.True(result.IsSuccessful, "NexMesh.Events 必须保持零第三方依赖:\n" + string.Join("\n", result.FailingTypeNames ?? []));
     }
 
+    /// <summary>规则 6:NexMesh.Data.Migrations 是数据层特性包——不得依赖 AI/Auth/Cache/Events/Host。</summary>
+    [Fact]
+    public void Migrations包_不得横向依赖()
+    {
+        var migrations = typeof(NexMesh.Data.Migrations.NexMeshMigration).Assembly;
+        var result = NetArchTest.Rules.Types.InAssembly(migrations)
+            .ShouldNot()
+            .HaveDependencyOnAny("NexMesh.AI", "NexMesh.Auth", "NexMesh.Cache", "NexMesh.Events", "NexMesh.Host")
+            .GetResult();
+        Assert.True(result.IsSuccessful, "NexMesh.Data.Migrations 不得横向依赖:" + string.Join(";", result.FailingTypeNames ?? []));
+    }
+
     /// <summary>规则 5:AI.Approval 是 AI 的特性包——只允许依赖 AI/Core 方向,不得横向依赖 Auth/Data/Cache/Events/Host。</summary>
     [Fact]
     public void Approval特性包_不得横向依赖()
@@ -89,6 +101,7 @@ public class PublicApiBaselineTests
     [Theory]
     [InlineData(typeof(NexMesh.Core.AutoApi.AutoApiEndpoint), "NexMesh.Core.txt")]
     [InlineData(typeof(NexMesh.Auth.LoginRateLimiter), "NexMesh.Auth.txt")]
+    [InlineData(typeof(NexMesh.Data.Migrations.NexMeshMigration), "NexMesh.Data.Migrations.txt")]
     public void 公共API面_与基线一致(System.Type markerType, string baselineFile)
     {
         var publicApi = markerType.Assembly.GeneratePublicApi(new ApiGeneratorOptions

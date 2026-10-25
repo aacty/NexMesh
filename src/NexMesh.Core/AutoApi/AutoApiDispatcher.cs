@@ -25,6 +25,9 @@ public sealed record AutoApiEndpoint(
     /// <summary>[Authorize(Roles)] 解析出的角色集合(逗号分隔)。</summary>
     public string[]? Roles { get; init; }
 
+    /// <summary>[EnableRateLimiting("策略名")] 解析出的限流策略(方法级优先、接口级兜底)。</summary>
+    public string? RateLimitPolicy { get; init; }
+
     /// <summary>OpenAPI 分组标签(契约接口名)。</summary>
     public string? Tags { get; init; }
 }

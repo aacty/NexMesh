@@ -30,6 +30,10 @@ namespace NexMesh.Auth
         System.Security.Claims.ClaimsPrincipal? GetPrincipalFromExpiredToken(string accessToken);
         bool ValidateToken(string accessToken);
     }
+    public interface ILoginRateLimitCounter
+    {
+        System.Threading.Tasks.Task<bool> TryPassAsync(string key, int permitLimit, int windowSeconds, System.Threading.CancellationToken cancellationToken = default);
+    }
     public interface ILoginValidator
     {
         System.Threading.Tasks.Task<NexMesh.Auth.LoginUser?> ValidateAsync(string username, string password);
@@ -80,8 +84,9 @@ namespace NexMesh.Auth
     }
     public sealed class LoginRateLimiter
     {
+        public LoginRateLimiter(Microsoft.Extensions.Configuration.IConfiguration configuration, NexMesh.Auth.ILoginRateLimitCounter counter) { }
         public LoginRateLimiter(Microsoft.Extensions.Configuration.IConfiguration configuration, System.TimeProvider? timeProvider = null) { }
-        public bool TryPass(Microsoft.AspNetCore.Http.HttpContext context) { }
+        public System.Threading.Tasks.Task<bool> TryPassAsync(Microsoft.AspNetCore.Http.HttpContext context, System.Threading.CancellationToken cancellationToken = default) { }
     }
     public static class LoginRateLimiterExtensions
     {
@@ -121,6 +126,11 @@ namespace NexMesh.Auth
         public System.Threading.Tasks.Task RemoveClaimsAsync(string accessToken, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task RemoveRefreshAsync(string userId, string refreshToken, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task SetClaimsAsync(string accessToken, System.Collections.Generic.IReadOnlyList<System.Security.Claims.Claim> claims, System.TimeSpan lifetime, System.Threading.CancellationToken ct = default) { }
+    }
+    public sealed class MemoryLoginRateLimitCounter : NexMesh.Auth.ILoginRateLimitCounter
+    {
+        public MemoryLoginRateLimitCounter(System.TimeProvider? timeProvider = null) { }
+        public System.Threading.Tasks.Task<bool> TryPassAsync(string key, int permitLimit, int windowSeconds, System.Threading.CancellationToken cancellationToken = default) { }
     }
     public sealed class MemorySessionStore : NexMesh.Auth.ISessionStore
     {
@@ -206,6 +216,11 @@ namespace NexMesh.Auth
     public static class RedisAuthStoreExtensions
     {
         public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshRedisAuthStore(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, string connectionString, string keyPrefix = "nexmesh:auth:") { }
+    }
+    public sealed class RedisLoginRateLimitCounter : NexMesh.Auth.ILoginRateLimitCounter
+    {
+        public RedisLoginRateLimitCounter(StackExchange.Redis.IConnectionMultiplexer redis, string keyPrefix = "nexmesh:login-rate:", bool failOpen = true, Microsoft.Extensions.Logging.ILogger<NexMesh.Auth.RedisLoginRateLimitCounter>? logger = null) { }
+        public System.Threading.Tasks.Task<bool> TryPassAsync(string key, int permitLimit, int windowSeconds, System.Threading.CancellationToken cancellationToken = default) { }
     }
     public sealed class RefreshTokenInfo
     {

@@ -1,0 +1,61 @@
+namespace NexMesh.Data.Migrations
+{
+    public interface IMigrationRunner
+    {
+        System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default);
+        System.Threading.Tasks.Task<int> RunPendingAsync(System.Threading.CancellationToken cancellationToken = default);
+    }
+    [FreeSql.DataAnnotations.Index("ux_nexmesh_migration_source_version", "source,version", true)]
+    [FreeSql.DataAnnotations.Table(Name="nexmesh_migration")]
+    public class MigrationRecordEntity
+    {
+        public MigrationRecordEntity() { }
+        [FreeSql.DataAnnotations.Column(Name="applied_at")]
+        public System.DateTime AppliedAt { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="checksum", StringLength=128)]
+        public string Checksum { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="duration_ms")]
+        public int DurationMs { get; set; }
+        [FreeSql.DataAnnotations.Column(IsIdentity=true, IsPrimary=true, Name="id")]
+        public long Id { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="name", StringLength=256)]
+        public string Name { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="source", StringLength=64)]
+        public string Source { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="version")]
+        public long Version { get; set; }
+    }
+    public abstract class NexMeshMigration
+    {
+        protected NexMeshMigration() { }
+        public string Checksum { get; }
+        public abstract string Name { get; }
+        public virtual string Source { get; }
+        public abstract long Version { get; }
+        public virtual System.Threading.Tasks.Task DownAsync(IFreeSql db, System.Threading.CancellationToken cancellationToken = default) { }
+        public virtual IFreeSql ResolveDb(System.IServiceProvider services) { }
+        public abstract System.Threading.Tasks.Task UpAsync(IFreeSql db, System.Threading.CancellationToken cancellationToken = default);
+    }
+    public static class NexMeshMigrationAppExtensions
+    {
+        public static System.Threading.Tasks.Task MigrateNexMeshAsync(this Microsoft.AspNetCore.Builder.WebApplication app, System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class NexMeshMigrationRunner : NexMesh.Data.Migrations.IMigrationRunner
+    {
+        public NexMeshMigrationRunner(System.IServiceProvider services, Microsoft.Extensions.Logging.ILogger<NexMesh.Data.Migrations.NexMeshMigrationRunner>? logger = null) { }
+        public System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task<int> RunPendingAsync(System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class NexMeshMigrationsOptions
+    {
+        public const string SectionName = "NexMesh:Migrations";
+        public NexMeshMigrationsOptions() { }
+        public bool Enabled { get; set; }
+    }
+    public static class NexMeshMigrationsServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshMigration<TMigration>(this Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+            where TMigration : NexMesh.Data.Migrations.NexMeshMigration { }
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshMigrations(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration, params System.Reflection.Assembly[] migrationAssemblies) { }
+    }
+}

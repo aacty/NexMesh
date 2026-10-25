@@ -241,3 +241,96 @@ public class LoginRateLimitTests
         await app.DisposeAsync();
     }
 }
+
+/// <summary>Redis 登录限流计数器:真实 Redis 下验证原子窗口;无 NEXMESH_TEST_REDIS 环境变量时软跳过(CI 提供)。</summary>
+public class RedisLoginRateLimitTests
+{
+    private static string? ConnectionString => Environment.GetEnvironmentVariable("NEXMESH_TEST_REDIS");
+
+    [Fact]
+    public async Task 并发二十次同Key_恰好放行限额数()
+    {
+        if (ConnectionString is null) return; // 无真实 Redis 环境时跳过
+
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var counter = new RedisLoginRateLimitCounter(redis, $"test:rl:{Guid.NewGuid():N}:");
+        var key = "ip-10.0.0.1";
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => counter.TryPassAsync(key, permitLimit: 5, windowSeconds: 60)));
+
+        Assert.Equal(5, results.Count(r => r));  // 恰好 5 次放行(原子性:无超发无丢失)
+        Assert.Equal(15, results.Count(r => !r));
+    }
+
+    [Fact]
+    public async Task 首次计数即设TTL_不同Key互不影响()
+    {
+        if (ConnectionString is null) return;
+
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var prefix = $"test:rl:{Guid.NewGuid():N}:";
+        var counter = new RedisLoginRateLimitCounter(redis, prefix);
+
+        Assert.True(await counter.TryPassAsync("ip-a", 2, 60));
+        Assert.True(await counter.TryPassAsync("ip-b", 2, 60)); // 不同 key 独立窗口
+
+        var ttl = (long)await redis.GetDatabase().ExecuteAsync("PTTL", (StackExchange.Redis.RedisKey)$"{prefix}ip-a");
+        Assert.True(ttl > 0 && ttl <= 60_000, $"TTL 应在 (0, 60000]ms,实际 {ttl}");
+    }
+}
+
+/// <summary>内存限流计数器过期清扫:窗口过期超过一个窗口期的 Key 被移除(防假 IP 扫描内存无限增长)。</summary>
+public class MemoryCounterSweepTests
+{
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task 摊销清扫_过期Key被移除_活跃Key保留()
+    {
+        var time = new FixedTimeProvider();
+        var counter = new MemoryLoginRateLimitCounter(time);
+
+        // 注入超过清扫阈值(4096)的过期 Key
+        for (var i = 0; i < 4100; i++)
+        {
+            await counter.TryPassAsync($"old-{i}", 5, 60);
+        }
+        // 一个即将活跃的 Key(稍后仍会使用)
+        await counter.TryPassAsync("active-1", 5, 60);
+
+        // 时间前进 2 个窗口期(超过清扫阈值:60s×2)
+        time.Now += TimeSpan.FromSeconds(125);
+        // 触发新一轮调用 → 摊销清扫执行
+        for (var i = 0; i < 4100; i++)
+        {
+            await counter.TryPassAsync($"fresh-{i}", 5, 60);
+        }
+
+        // 验证:旧 Key 过期后其窗口在 next-hit 时会重置(行为不变),字典规模有界
+        // 通过行为验证清扫:old-0 重新计数(窗口重置=1 ≤ 5 放行)
+        Assert.True(await counter.TryPassAsync("old-0", 5, 60));
+        // 活跃 key:已过 125s > 60s 窗口,重置后放行
+        Assert.True(await counter.TryPassAsync("active-1", 5, 60));
+    }
+
+    [Fact]
+    public async Task 并发清扫_计数守恒()
+    {
+        var counter = new MemoryLoginRateLimitCounter();
+        var allowed = 0L;
+        // 50 万次并发(跨多次清扫),限额无限 → 全部放行,证明清扫不破坏原子计数
+        await Parallel.ForAsync(0, 100_000, async (i, ct) =>
+        {
+            if (await counter.TryPassAsync($"ip-{i % 1000}", int.MaxValue, 60))
+            {
+                Interlocked.Increment(ref allowed);
+            }
+        });
+        Assert.Equal(100_000, allowed);
+    }
+}

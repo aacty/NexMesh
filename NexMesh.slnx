@@ -11,6 +11,7 @@
     <Project Path="src/NexMesh.AI.SemanticCache/NexMesh.AI.SemanticCache.csproj" />
     <Project Path="src/NexMesh.AI.Workflow/NexMesh.AI.Workflow.csproj" />
     <Project Path="src/NexMesh.Events/NexMesh.Events.csproj" />
+    <Project Path="src/NexMesh.Data.Migrations/NexMesh.Data.Migrations.csproj" />
     <Project Path="src/NexMesh.Host/NexMesh.Host.csproj" />
   </Folder>
   <Folder Name="/samples/">
@@ -18,6 +19,8 @@
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/NexMesh.Benchmarks/NexMesh.Benchmarks.csproj" />
+    <Project Path="benchmarks/NexMesh.LoadTests/NexMesh.LoadTests.csproj" />
+    <Project Path="benchmarks/NexMesh.ConcurrencyAudit/NexMesh.ConcurrencyAudit.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NexMesh.Core.Tests/NexMesh.Core.Tests.csproj" />
@@ -35,5 +38,6 @@
     <Project Path="tests/NexMesh.AI.Fixtures.Instance/NexMesh.AI.Fixtures.Instance.csproj" />
     <Project Path="tests/NexMesh.Events.Tests/NexMesh.Events.Tests.csproj" />
     <Project Path="tests/NexMesh.ArchTests/NexMesh.ArchTests.csproj" />
+    <Project Path="tests/NexMesh.Data.Migrations.Tests/NexMesh.Data.Migrations.Tests.csproj" />
   </Folder>
 </Solution>

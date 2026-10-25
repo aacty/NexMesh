@@ -12,6 +12,7 @@
     <ProjectReference Include="..\..\src\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Cache\NexMesh.Cache.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Events\NexMesh.Events.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Data.Migrations\NexMesh.Data.Migrations.csproj" />
   </ItemGroup>
 
   <ItemGroup>

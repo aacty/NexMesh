@@ -1,0 +1,13 @@
+{
+  "NexMesh": {
+    "RateLimit": {
+      "Policies": {
+        "demo-burst": {
+          "PermitLimit": 3,
+          "WindowSeconds": 10,
+          "Partition": "Ip"
+        }
+      }
+    }
+  }
+}

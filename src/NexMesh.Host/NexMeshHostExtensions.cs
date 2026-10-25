@@ -71,15 +71,26 @@ public static class NexMeshHostExtensions
         return builder;
     }
 
-    /// <summary>一行装配管道与端点:上下文快照 → 异常/TraceId → CORS → 契约端点 → 健康检查 → OpenAPI/Scalar。</summary>
+    /// <summary>一行装配管道与端点:上下文快照 → 异常/TraceId → CORS →(限流,注册过才挂)→ 契约端点 → 健康检查 → OpenAPI/Scalar。</summary>
     public static WebApplication UseNexMeshService(this WebApplication app, params Assembly[] assemblies)
     {
         app.UseNexMeshContext();
         app.UseNexMeshExceptionHandling();
         app.UseCors("nexmesh");
+        UseNexMeshRateLimiting(app);
         app.MapNexMeshContracts(assemblies.Length > 0 ? assemblies : [Assembly.GetEntryAssembly()!]);
         app.MapNexMeshHealth();
         app.MapNexMeshDocs();
         return app;
+    }
+
+    /// <summary>端点限流:AddNexMeshRateLimiter 注册过才挂(未注册零开销);并做启动期策略名审计。</summary>
+    internal static void UseNexMeshRateLimiting(this WebApplication app)
+    {
+        if (app.Services.GetService<NexMesh.NexMeshRateLimitMarker>() is not null)
+        {
+            app.UseRateLimiter();
+            NexMesh.Core.RateLimiting.RateLimitPolicyAudit.AuditPolicies(app);
+        }
     }
 }

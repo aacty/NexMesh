@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <Description>NexMesh 千万级并发极限审计:限流计数器/事件总线 Channel 守恒与分区正确性、内存泄漏验证(可复跑)</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexMesh.Events\NexMesh.Events.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Auth\NexMesh.Auth.csproj" />
+  </ItemGroup>
+
+</Project>

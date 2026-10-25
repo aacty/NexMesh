@@ -83,6 +83,7 @@ public static class NexMeshModuleHostExtensions
         app.UseNexMeshExceptionHandling();
         app.UseNexMeshAuthentication();
         app.UseAuthorization();
+        NexMeshHostExtensions.UseNexMeshRateLimiting(app); // 注册过 AddNexMeshRateLimiter 才挂(未注册零开销)
         app.MapNexMeshContracts(hostSet.Assemblies);
         app.MapNexMeshHealth();
         app.MapNexMeshDocs();

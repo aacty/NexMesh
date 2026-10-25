@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <Description>NexMesh HTTP 压测工具:对运行中的服务实测 RPS/p50/p95/p99/错误率,输出 Markdown 报告</Description>
+  </PropertyGroup>
+
+</Project>

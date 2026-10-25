@@ -91,6 +91,23 @@ namespace NexMesh
         public virtual bool ShouldExposeMessage { get; }
         public int StatusCode { get; }
     }
+    public sealed class NexMeshRateLimitMarker
+    {
+        public NexMeshRateLimitMarker() { }
+        public bool HasCustomConfiguration { get; }
+        public System.Collections.Generic.HashSet<string> RegisteredPolicies { get; }
+    }
+    public sealed class NexMeshRateLimitPolicyOptions
+    {
+        public NexMeshRateLimitPolicyOptions() { }
+        public string Partition { get; set; }
+        public int PermitLimit { get; set; }
+        public int WindowSeconds { get; set; }
+    }
+    public static class NexMeshRateLimitServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshRateLimiter(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration, System.Action<Microsoft.AspNetCore.RateLimiting.RateLimiterOptions>? configure = null) { }
+    }
     public class NotFoundException : NexMesh.MeshException
     {
         public NotFoundException(string message) { }
@@ -293,6 +310,7 @@ namespace NexMesh.Core.AutoApi
         public System.Reflection.PropertyInfo? DeclaredResult { get; init; }
         public bool ExplicitAuthorize { get; init; }
         public System.Reflection.MethodInfo Method { get; init; }
+        public string? RateLimitPolicy { get; init; }
         public string[]? Roles { get; init; }
         public string Route { get; init; }
         public System.Type ServiceType { get; init; }
@@ -391,5 +409,12 @@ namespace NexMesh.Core.Middlewares
     {
         public MeshExceptionMiddleware(Microsoft.AspNetCore.Http.RequestDelegate next, Microsoft.Extensions.Logging.ILogger<NexMesh.Core.Middlewares.MeshExceptionMiddleware> logger) { }
         public System.Threading.Tasks.Task InvokeAsync(Microsoft.AspNetCore.Http.HttpContext context) { }
+    }
+}
+namespace NexMesh.Core.RateLimiting
+{
+    public static class RateLimitPolicyAudit
+    {
+        public static void AuditPolicies(Microsoft.AspNetCore.Builder.WebApplication app) { }
     }
 }

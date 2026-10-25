@@ -31,7 +31,33 @@ public static class NexMeshAuthExtensions
         services.AddSingleton<ITokenStore, MemoryTokenStore>();
         services.AddSingleton<NexMeshTokenService>();
         services.AddSingleton<IJwtTokenService, NexMeshJwtTokenService>();
-        services.AddSingleton(new LoginRateLimiter(configuration)); // B5:登录限流(配置直接注入,不依赖容器 IConfiguration)
+        // 登录限流:计数器按配置选择 Store=Auto(容器有 Redis 连接即 Redis,多实例全局一致)|Memory|Redis
+        services.AddSingleton(sp =>
+        {
+            var section = configuration.GetSection("NexMesh:Auth:LoginRateLimit");
+            var store = section["Store"] ?? "Auto";
+            var wantRedis = store.Equals("Redis", StringComparison.OrdinalIgnoreCase)
+                || (store.Equals("Auto", StringComparison.OrdinalIgnoreCase) && sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is not null);
+            ILoginRateLimitCounter counter;
+            if (wantRedis)
+            {
+                var multiplexer = sp.GetService<StackExchange.Redis.IConnectionMultiplexer>()
+                    ?? throw new InvalidOperationException(
+                        "[LoginRateLimit] Store=Redis/Auto 检测到需 Redis,但容器未注册 IConnectionMultiplexer" +
+                        "(多实例部署请先 AddNexMeshRedisAuthStore 或经 AddSecurity 配置 NexMesh:Authentication:Redis)");
+                var failOpen = !string.Equals(section["RedisFailMode"], "Closed", StringComparison.OrdinalIgnoreCase);
+                counter = new RedisLoginRateLimitCounter(
+                    multiplexer,
+                    section["KeyPrefix"] ?? "nexmesh:login-rate:",
+                    failOpen,
+                    sp.GetService<Microsoft.Extensions.Logging.ILogger<RedisLoginRateLimitCounter>>());
+            }
+            else
+            {
+                counter = new MemoryLoginRateLimitCounter();
+            }
+            return new LoginRateLimiter(configuration, counter);
+        });
 
         // 兼容配置节(NexMesh:Authentication)存在时,Jwt.AccessTokenExpirationMinutes 成为签发有效期权威
         var authSection = configuration.GetSection("NexMesh:Authentication");
@@ -56,9 +82,9 @@ public static class NexMeshAuthExtensions
         var prefix = routePrefix.Trim('/');
         endpoints.MapPost($"/{prefix}/login", async (LoginRequest req, HttpContext http) =>
         {
-            // B5:per-IP 固定窗口限流,超限 429(42901)
+            // per-IP 固定窗口限流,超限 429(内存或 Redis 计数,配置决定)
             var limiter = http.RequestServices.GetRequiredService<LoginRateLimiter>();
-            if (!limiter.TryPass(http))
+            if (!await limiter.TryPassAsync(http))
             {
                 return Results.Json(
                     ApiResult<object>.Fail("登录尝试过于频繁,请稍后再试", 429), statusCode: 429);

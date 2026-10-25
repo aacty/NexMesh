@@ -1,6 +1,7 @@
 using FreeSql;
 using Microsoft.Extensions.AI;
 using Microsoft.AspNetCore.Authorization;
+using NexMesh;
 using NexMesh.AI.Approval;
 using NexMesh.Auth;
 using NexMesh.AI.Core;
@@ -23,6 +24,7 @@ builder.Services.AddNexMeshFileStorage(builder.Configuration); // 文件存储:D
 builder.Services.AddNexMeshAuth(builder.Configuration);
 builder.Services.AddTransient<ILoginValidator, NexMesh.AiDemo.Services.DemoLoginValidator>();
 builder.Services.AddNexMeshEvents(builder.Configuration); // 进程内事件总线:订阅者自动发现(含 Events/DemoEventSubscriber)
+builder.Services.AddNexMeshRateLimiter(builder.Configuration); // 端点限流:Configs/RateLimit.json 的 demo:burst 策略
 
 var app = builder.Build();
 

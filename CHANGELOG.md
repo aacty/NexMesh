@@ -1,5 +1,20 @@
 # 更新日志
 
+## 未发布(0.0.6)
+
+新包 NexMesh.Data.Migrations(数据库版本化迁移)+ 登录限流 Redis 化 + 契约端点限流 + HTTP 压测基线。公共 API 变化见 tests/NexMesh.ArchTests/ApiBaselines 基线 diff(Core 新增 AddNexMeshRateLimiter/AutoApiEndpoint.RateLimitPolicy;Auth 的 LoginRateLimiter.TryPass 改为 TryPassAsync 并新增计数器抽象;新包 Migrations 首次建立基线)。
+
+- **新包 NexMesh.Data.Migrations**:显式迁移链(升序/单迁移单事务/幂等/Checksum 防篡改/多数据源按 Source 各自独立/RevertAsync 回退);显式 app.MigrateNexMeshAsync() 或 Enabled=true 宿主自动执行(默认关闭)。8 项语义测试(SQLite 实测含事务回滚)
+- **登录限流多实例**:`ILoginRateLimitCounter` 抽象 + 内存实现 + Redis 实现(Lua 原子 INCR+PEXPIRE);配置 Store=Auto(有认证 Redis 即全局计数)/Memory/Redis、RedisFailMode=Open(默认)/Closed;本地 Redis 实测并发 20 恰好放行限额
+- **契约端点限流**:`AddNexMeshRateLimiter`(配置驱动命名策略 Ip/User 分区,统一 429 信封;configure 回调支持代码级策略);契约方法标 [EnableRateLimiting("策略名")] 生效(方法级;官方特性不支持接口标注);两宿主管线带标记守护挂 UseRateLimiter + 启动期未知策略名告警
+- **HTTP 压测基线**:benchmarks/NexMesh.LoadTests(零依赖);首次实测入库(AiDemo/SQLite:health 116k RPS p99 1.3ms;契约分页 7.2k RPS p99 66ms,0 错误)
+- AiDemo:限流演示端点(Configs/RateLimit.json);文档:配置参考三节/包实战案例第 13 节/大型项目指南清单更新
+- **修复:宿主管线限流插入丢失**(管线曾因脚本补丁静默失败未挂 UseRateLimiter,单元测试因自挂中间件而全绿、掩盖缺口;端到端复测发现 5 连 200)。修复后 UseNexMeshService/UseNexMeshHost 经 UseNexMeshRateLimiting(标记守护+审计)真实挂载;新增宿主管线级测试固化该端到端断言;AiDemo 实测 200×3→429×2。publish.yml 版本号改从 tag 名取(去掉 v 前缀),发版号与 tag 一致
+- **百亿级终极审计完成(10,000,000,000 次打击,66 分钟)+ 溢出缺陷修复**:审计推演发现 Window.Count 为 int——单窗口累计 2,147,483,647 次后溢出为负,限流恒放行;修复为 long 并实证:21.4 亿次打击限额 3 放行恰好 3。100 亿次交错计数:放行 2,147,483,647(精确=限额)+ 拒绝 7,852,516,353(精确=余量),零丢失零超发,322 万 ops/s,峰值堆 3MB 零增长;Redis 路径 10 万次真实网络随机并发,500 Key 恰好各放行限额数
+- **千万级并发极限审计(10,000,000 操作,24 核/96 并行度,报告入库 benchmarks/NexMesh.ConcurrencyAudit 可复跑)**:登录限流计数器 10M 交错守恒 PASS(310 万 ops/s);事件总线有界 Channel 10M 写零丢失 PASS(225 万 ops/s,回压下);100 万独立 IP 分区隔离恰好 300 万放行 PASS。审计发现并修复:内存限流计数器过期 Key 无清扫(实测 100 万 Key 驻留 141MB 且永不释放,慢速假 IP 扫描内存无限增长)——新增摊销清扫(每 4096 次调用触发,双窗口保守阈值),修复后 134.6MB 注入过期清扫全量回收;补 2 项清扫语义测试(FakeTime 拨钟 + 10 万并发计数守恒)
+- **SSS+ 评审(0.0.6 新代码)**:①Revert 未应用迁移照跑 DownAsync 的误删风险——先查记录不存在即拒绝(新增 2 项测试);②应用循环逐条间补取消令牌检查(停机取消即时生效);③ApplyAsync 虚假异步修正为同步方法(事务边界内 GetResult 为既定语义,注释固化);④DurationMs 改为含记录写入的真实耗时;⑤多实例部署语义明示——迁移为单实例执行(进程内信号量不跨进程),滚动部署先迁后扩,分布式锁列后续
+- **审核加固**:迁移 Runner 并发守卫(信号量串行化,防显式调用与宿主自动执行叠加双应用)+ 按次作用域解析迁移实例(不再俘获瞬时实例)+ Checksum 语义文档化(身份指纹,非内容指纹);限流 OnRejected 改为真实 ApiResult 序列化(与框架信封同源);补 5 项测试:宿主自动执行/迁移失败阻止启动/并发触发幂等/未知策略运行期报错/429 信封结构
+
 ## v0.0.5 (2026-10-25)
 
 新增进程内事件总线 + 契约分发委托化 + 质量保障机制。行为兼容,公共 API 变化仅 `LoginRateLimiter` 构造函数新增可选 `TimeProvider` 参数;新增包 NexMesh.Events。

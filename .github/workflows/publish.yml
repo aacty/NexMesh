@@ -27,10 +27,15 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Compute version (0.MINOR.RUN_NUMBER)
+      - name: Compute version (tag name, fallback run number)
         id: version
         run: |
-          VERSION="0.0.${{ github.run_number }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION=${VERSION#v}
+          else
+            VERSION="0.0.${{ github.run_number }}"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "📦 Version: $VERSION"
 
@@ -41,7 +46,7 @@ jobs:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
       - name: Build
-        run: dotnet build NexMesh.slnx -c Release --no-restore
+        run: dotnet build NexMesh.slnx -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
         env:
           CI: true
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
@@ -50,7 +55,7 @@ jobs:
         run: dotnet test NexMesh.slnx -c Release --no-build
 
       - name: Pack
-        run: dotnet pack NexMesh.slnx -c Release -o ./packages --no-build
+        run: dotnet pack NexMesh.slnx -c Release -o ./packages --no-build -p:Version=${{ steps.version.outputs.version }}
         env:
           CI: true
           GITHUB_RUN_NUMBER: ${{ github.run_number }}

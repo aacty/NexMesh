@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NexMesh v2.0 数据库版本化迁移:显式迁移链(升序/单迁移单事务/幂等/Checksum 防篡改)+ 多数据源各自独立迁移 + 生产替代 AutoSyncStructure</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
+  </ItemGroup>
+
+</Project>

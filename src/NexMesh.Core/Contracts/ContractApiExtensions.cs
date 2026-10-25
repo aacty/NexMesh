@@ -61,6 +61,11 @@ public static class ContractApiExtensions
                 builder.RequireAuthorization();
             }
 
+            if (endpoint.RateLimitPolicy is not null)
+            {
+                builder.RequireRateLimiting(endpoint.RateLimitPolicy);
+            }
+
             if (endpoint.Tags is not null)
             {
                 builder.WithTags(endpoint.Tags);
@@ -190,6 +195,8 @@ public static class ContractApiExtensions
             || iface.GetCustomAttribute<AllowAnonymousAttribute>() is not null;
         var authorize = method.GetCustomAttribute<AuthorizeAttribute>()
             ?? iface.GetCustomAttribute<AuthorizeAttribute>();
+        // 官方 [EnableRateLimiting] 仅允许标注于方法(.NET 10 AttributeUsage 不含接口),故仅方法级识别
+        var rateLimit = method.GetCustomAttribute<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>();
 
         // ServiceType = 契约接口(DI 按接口解析实现;接口 MethodInfo 可直接在实现实例上 Invoke)
         return new AutoApiEndpoint(iface, method, verb, route, bodyParam, declaredResult)
@@ -198,6 +205,7 @@ public static class ContractApiExtensions
             ExplicitAuthorize = authorize is not null,
             Roles = authorize?.Roles?
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            RateLimitPolicy = rateLimit?.PolicyName,
             Tags = iface.Name,
         };
     }
