@@ -20,6 +20,7 @@
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/NexMesh.Benchmarks/NexMesh.Benchmarks.csproj" />
     <Project Path="benchmarks/NexMesh.LoadTests/NexMesh.LoadTests.csproj" />
+    <Project Path="benchmarks/NexMesh.GrpcLoadTests/NexMesh.GrpcLoadTests.csproj" />
     <Project Path="benchmarks/NexMesh.ConcurrencyAudit/NexMesh.ConcurrencyAudit.csproj" />
   </Folder>
   <Folder Name="/tests/">

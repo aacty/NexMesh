@@ -9,6 +9,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- gRPC 面:契约双面输出(JSON-over-gRPC 动态注册) -->
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
     <ProjectReference Include="..\NexMesh.AI\NexMesh.AI.csproj" />
     <ProjectReference Include="..\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
@@ -16,4 +22,7 @@
     <ProjectReference Include="..\NexMesh.Auth\NexMesh.Auth.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Protobuf Include="Grpc/contract_gateway.proto" GrpcServices="Both" />
+  </ItemGroup>
 </Project>

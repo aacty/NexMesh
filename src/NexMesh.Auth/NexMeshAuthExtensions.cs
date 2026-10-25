@@ -30,6 +30,7 @@ public static class NexMeshAuthExtensions
         services.AddSingleton<IClaimsJournal, MemoryClaimsJournal>();
         services.AddSingleton<ITokenStore, MemoryTokenStore>();
         services.AddSingleton<NexMeshTokenService>();
+        services.AddSingleton<OidcTokenValidator>(); // 外部 IdP JWT 验证(配置 NexMesh:Authentication:Oidc 才生效)
         services.AddSingleton<IJwtTokenService, NexMeshJwtTokenService>();
         // 登录限流:计数器按配置选择 Store=Auto(容器有 Redis 连接即 Redis,多实例全局一致)|Memory|Redis
         services.AddSingleton(sp =>
@@ -90,6 +91,21 @@ public static class NexMeshAuthExtensions
                     ApiResult<object>.Fail("登录尝试过于频繁,请稍后再试", 429), statusCode: 429);
             }
 
+            // OIDC token-exchange:携带外部 IdP JWT 时验证并换发本地不透明令牌(滑动续期/吊销语义保留)
+            if (!string.IsNullOrEmpty(req.OidcToken))
+            {
+                var oidc = http.RequestServices.GetRequiredService<OidcTokenValidator>();
+                var oidcUser = oidc.Validate(req.OidcToken);
+                if (oidcUser is null)
+                {
+                    return Results.Json(
+                        ApiResult<object>.Fail("OIDC 令牌无效或已过期", 401), statusCode: 401);
+                }
+                var exchanged = await http.RequestServices.GetRequiredService<NexMeshTokenService>().IssueAsync(oidcUser);
+                return Results.Ok(ApiResult<LoginResponse>.Ok(new LoginResponse(
+                    exchanged.Token, exchanged.ExpiresAt, exchanged.UserId, exchanged.UserName, exchanged.TenantId)));
+            }
+
             var validator = http.RequestServices.GetService<ILoginValidator>();
             if (validator is null)
             {
@@ -133,7 +149,11 @@ public static class NexMeshAuthExtensions
 }
 
 /// <summary>登录请求体。</summary>
-public record LoginRequest(string Username, string Password);
+public record LoginRequest(string Username, string Password)
+{
+    /// <summary>外部 IdP 签发的 JWT(token-exchange 模式:验证通过换发本地令牌;配置 Oidc 节时生效)。</summary>
+    public string? OidcToken { get; init; }
+}
 
 /// <summary>登录响应。</summary>
 public record LoginResponse(string AccessToken, DateTime ExpiresAt, string UserId, string? UserName, string? TenantId);

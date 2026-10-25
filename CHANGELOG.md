@@ -1,5 +1,15 @@
 # 更新日志
 
+## 未发布(0.0.7)
+
+迁移分布式锁 + OIDC 外部 IdP 对接 + 契约 gRPC 面(三线并行)。
+
+- **迁移分布式锁(Redis 租约)**:补全 0.0.6 明示的"单实例执行"约束——IMigrationLock 抽象(SET NX PX 随机 token/半租约 Lua 续期/释放校验 token;崩溃后租约过期可接管无死锁);容器有 IConnectionMultiplexer 自动启用(运行期解析,注册顺序无关),无 Redis 时 Noop 锁语义不变;Runner 拿不到锁等待重试(90s 超时)。4 项真 Redis 测试(互斥/崩溃接管/续期保活/双 Runner 并发恰好一次)
+- **OIDC 外部 IdP 对接(token-exchange)**:自研轻量 JWT 验证器(零外部依赖:HS256/RS256 验签 + exp/nbf/iss/aud + 时钟偏移);配置 NexMesh:Authentication:Oidc 启用;登录端点收 oidcToken 换发本地不透明令牌——滑动续期/吊销/ICurrentUser 全保留。模糊输入实测修复安全解码缺口;6 项测试(自造 RSA/HMAC JWT 全语义)
+- **gRPC 网关千万级压测**:10,000,000 请求/48 通道(InMemory),ok=10M err=0 逐笔载荷校验全对,吞吐 465,159 req/s,峰值堆 22MB 零增长;压测程序入库 benchmarks/NexMesh.GrpcLoadTests(教训:Info 级请求日志在千万级下拖死 IO,压测须 LogLevel.Warning)
+- **全面审核加固(0.0.7 三线)**:①迁移锁续期循环容错——Redis 闪断不再打死循环(退出=续期停止=租约过期=双实例并发迁移,分布式锁核心失效模式;改为失败续跑仅取消退出);②OIDC HS256 弱密钥(<32 字节)拒绝启用(防字典攻击);③exp/nbf 越界数值钳制+减法方向比较(MaxValue±skew 溢出,补丁测试当场抓获);④gRPC 网关 (service,method)→端点 惰性缓存(原每请求全量反射扫描);⑤Benchmarks TryPassAsync 对齐
+- **契约 gRPC 面(通用网关)**:AddNexMeshGrpc/MapNexMeshGrpc;单 proto(ContractCall/ContractReply 永不变)+按 (service,method,args_json) 路由到与 REST 完全相同的契约实现——业务契约零 proto 生成;响应 REST 同款信封;NexMesh:GrpcPort>0 自动 Http2 监听;Host 包 Both 生成,消费方引包即得 client。双面一致集成测试
+
 ## 未发布(0.0.6)
 
 新包 NexMesh.Data.Migrations(数据库版本化迁移)+ 登录限流 Redis 化 + 契约端点限流 + HTTP 压测基线。公共 API 变化见 tests/NexMesh.ArchTests/ApiBaselines 基线 diff(Core 新增 AddNexMeshRateLimiter/AutoApiEndpoint.RateLimitPolicy;Auth 的 LoginRateLimiter.TryPass 改为 TryPassAsync 并新增计数器抽象;新包 Migrations 首次建立基线)。
@@ -38,7 +48,7 @@ Scalar 契约文档自生成器（自 v0.0.3 起 20 个提交）。
 
 ## v0.0.3 (2026-10-23)
 
-**约定对齐升级（约定级破坏变更）**——对外表面与 MicroMesh 完全一致，单一约定、无历史包袱：
+**约定对齐升级(约定级破坏变更)**——统一对外表面,单一约定:
 
 - 信封 `ApiResult`：成功 `code=0`；失败 `success=false` + 业务码（前端 H5 依赖 `code=0`）
 - 分页 `PagedResult<T>`（Items/TotalCount/PageIndex/PageSize/TotalPages/HasNext/HasPrevious）
@@ -46,7 +56,7 @@ Scalar 契约文档自生成器（自 v0.0.3 起 20 个提交）。
 - 契约端点唯一约定：`[ApiContract]`/`IServiceApi` 接口 + 原生 `[Http*]`/`[Authorize]`，路由 `api/{服务名}/{模板}`；移除 `IAutoApi`/`[ServiceRoute]` 类模式
 - 认证表面：不透明令牌（可吊销/滑动续期/Redis 会话）+ `ICurrentUser<TUser>` + `IJwtTokenService`/`ITokenStore`
 - 数据表面：`AddDBSource<TDBSource>` 类型化多源 + `IRepository` 标记 + `IIdGenerator`
-- 模块宿主 `AddNexMeshHost`/`UseNexMeshHost`；SocialWork 全量迁移验证（159 端点路由 100% 对账）
+- 模块宿主 `AddNexMeshHost`/`UseNexMeshHost`;以大型业务系统全量迁移完成端点级验证(159 端点路由 100% 对账)
 
 ## v0.0.2 (2026-10-23)
 

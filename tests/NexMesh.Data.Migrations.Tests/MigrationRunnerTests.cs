@@ -347,3 +347,94 @@ public class RevertGuardTests
         Assert.Contains("未注册迁移", ex.Message);
     }
 }
+
+/// <summary>分布式锁语义(真实 Redis,无 NEXMESH_TEST_REDIS 时软跳过)。</summary>
+public class MigrationLockTests
+{
+    private static string? ConnectionString => Environment.GetEnvironmentVariable("NEXMESH_TEST_REDIS");
+
+    [Fact]
+    public async Task 互斥_同一key仅一个实例持锁()
+    {
+        if (ConnectionString is null) return;
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var key = $"test:mig-lock:{Guid.NewGuid():N}";
+        var lock1 = new RedisMigrationLock(redis, key, TimeSpan.FromSeconds(10));
+        var lock2 = new RedisMigrationLock(redis, key, TimeSpan.FromSeconds(10));
+
+        using var lease1 = await lock1.TryAcquireAsync();
+        Assert.NotNull(lease1);
+        Assert.Null(await lock2.TryAcquireAsync()); // 互斥:第二实例拿不到
+
+        lease1!.Dispose(); // 释放
+        var lease2 = await lock2.TryAcquireAsync(); // 接管
+        Assert.NotNull(lease2);
+        lease2!.Dispose();
+    }
+
+    [Fact]
+    public async Task 进程崩溃语义_租约过期后其他实例可接管()
+    {
+        if (ConnectionString is null) return;
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var key = $"test:mig-lock:{Guid.NewGuid():N}";
+        var survivor = new RedisMigrationLock(redis, key, TimeSpan.FromSeconds(10));
+
+        // 模拟崩溃残留:持有者进程已死(续期循环随之终止),Redis 中只剩无人续期的短租约锁
+        await redis.GetDatabase().StringSetAsync(key, "crashed-owner-token", TimeSpan.FromMilliseconds(600));
+        Assert.Null(await survivor.TryAcquireAsync()); // 租约未过期:拿不到
+
+        await Task.Delay(TimeSpan.FromMilliseconds(900)); // 租约自然过期
+        var taken = await survivor.TryAcquireAsync();
+        Assert.NotNull(taken); // survivor 接管——无死锁
+        taken!.Dispose();
+    }
+
+    [Fact]
+    public async Task 续期保活_长迁移期间锁不丢()
+    {
+        if (ConnectionString is null) return;
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var key = $"test:mig-lock:{Guid.NewGuid():N}";
+        // 短租约(1.2s)+续期(0.6s 周期);持锁 2.5s(跨多个租约期)后他人仍拿不到
+        var holder = new RedisMigrationLock(redis, key, TimeSpan.FromMilliseconds(1200));
+        var other = new RedisMigrationLock(redis, key, TimeSpan.FromSeconds(10));
+
+        using var lease = await holder.TryAcquireAsync();
+        await Task.Delay(TimeSpan.FromMilliseconds(2500)); // 无续期早过期了
+        Assert.Null(await other.TryAcquireAsync()); // 续期保活:锁仍属 holder
+    }
+
+    [Fact]
+    public async Task Runner集成_双实例并发迁移_恰好应用一次()
+    {
+        if (ConnectionString is null) return;
+        var dbName = $"lock-runner-{Guid.NewGuid():N}";
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var lockKey = $"test:mig-runner:{Guid.NewGuid():N}";
+
+        // 两个独立 ServiceProvider 模拟两实例,共享同一 SQLite 共享内存库与 Redis 锁
+        var tasks = new List<Task<int>>();
+        for (var i = 0; i < 2; i++)
+        {
+            var services = new ServiceCollection();
+            services.AddNexMesh();
+            services.AddNexMeshDb("main", o =>
+            {
+                o.DataType = DataType.Sqlite;
+                o.ConnectionString = $"Data Source=file:{dbName}?mode=memory&cache=shared";
+                o.AutoSyncStructure = false;
+            });
+            services.AddNexMeshMigration<V1000_CreateOrders>();
+            var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+            services.AddNexMeshMigrations(config, typeof(NexMeshMigration).Assembly);
+            services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(redis);
+            services.AddSingleton<IMigrationLock>(_ => new RedisMigrationLock(redis, lockKey, TimeSpan.FromSeconds(10)));
+            var provider = services.BuildServiceProvider();
+            tasks.Add(Task.Run(() => provider.GetRequiredService<IMigrationRunner>().RunPendingAsync()));
+        }
+        var results = await Task.WhenAll(tasks);
+
+        Assert.Equal(1, results.Sum()); // 恰好一个实例应用(另一实例幂等跳过)
+    }
+}

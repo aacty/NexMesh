@@ -9,6 +9,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 分布式锁(Redis 租约,可选功能——不配置即不使用;照 AI.Approval 引 FreeSql 的特性包先例) -->
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
   </ItemGroup>
 

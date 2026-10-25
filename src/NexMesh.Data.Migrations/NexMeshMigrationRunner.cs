@@ -17,7 +17,8 @@ using Microsoft.Extensions.Options;
 /// </summary>
 public sealed class NexMeshMigrationRunner(
     IServiceProvider services,
-    ILogger<NexMeshMigrationRunner>? logger = null) : IMigrationRunner
+    ILogger<NexMeshMigrationRunner>? logger = null,
+    IMigrationLock? distributedLock = null) : IMigrationRunner
 {
     /// <summary>并发防护:显式调用与宿主自动执行叠加时串行化,防止同一迁移被双应用。</summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -25,12 +26,28 @@ public sealed class NexMeshMigrationRunner(
     public async Task<int> RunPendingAsync(CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken);
+        // 分布式锁(可选):多实例部署时保证仅一个实例执行;拿不到则等待重试(锁持有者完成后释放)
+        IMigrationLease? lease = null;
+        if (distributedLock is not null)
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(90);
+            while ((lease = await distributedLock.TryAcquireAsync(cancellationToken)) is null)
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new InvalidOperationException(
+                        "[NexMesh.Migrations] 获取迁移分布式锁超时(90s)——另一实例可能持锁未放或迁移耗时过长");
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+            }
+        }
         try
         {
             return await RunPendingCoreAsync(cancellationToken);
         }
         finally
         {
+            lease?.Dispose();
             _gate.Release();
         }
     }
@@ -132,7 +149,7 @@ public sealed class NexMeshMigrationRunner(
         }
         // 设计取舍:Revert 不做 Checksum 校验——回滚是显式运维动作,操作者对后果负责
 
-        // Transaction(Action):块内异常自动回滚(与社工项目既有用法一致)
+        // Transaction(Action):块内异常自动回滚(FreeSql 同步事务的唯一边界形态)
         db.Ado.Transaction(() =>
         {
             migration.DownAsync(db, cancellationToken).GetAwaiter().GetResult();

@@ -98,7 +98,7 @@ public class LoginRateLimiterBenchmarks
     }
 
     [Benchmark]
-    public bool TryPass() => _limiter.TryPass(_context);
+    public async Task<bool> TryPass() => await _limiter.TryPassAsync(_context);
 }
 
 // ═══════════════ 基准 3:事件总线发布 ═══════════════

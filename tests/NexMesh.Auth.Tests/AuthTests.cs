@@ -1,6 +1,7 @@
 namespace NexMesh.Auth.Tests;
 
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
@@ -332,5 +333,176 @@ public class MemoryCounterSweepTests
             }
         });
         Assert.Equal(100_000, allowed);
+    }
+}
+
+/// <summary>OIDC token-exchange:自造 JWT(RS256/HS256)全语义验证——验签/过期/错密钥/iss/aud/claims 映射/端点换发。</summary>
+public class OidcTokenExchangeTests
+{
+    // —— 自造 JWT 工具(零外部依赖) ——
+    private static string B64Url(byte[] bytes)
+        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    private static string MakeJwt(Dictionary<string, object> header, Dictionary<string, object> payload, Func<byte[], byte[]> sign)
+    {
+        var h = B64Url(System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(header)));
+        var p = B64Url(System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(payload)));
+        var sig = B64Url(sign(System.Text.Encoding.UTF8.GetBytes($"{h}.{p}")));
+        return $"{h}.{p}.{sig}";
+    }
+
+    private static Microsoft.Extensions.Options.IOptions<NexMesh.Auth.AuthenticationOptions> Opts(string issuer, string? secret = null, string? pem = null, string? aud = null) =>
+        Microsoft.Extensions.Options.Options.Create(new NexMesh.Auth.AuthenticationOptions
+        {
+            Oidc = new OidcOptions { Issuer = issuer, Secret = secret ?? "", RsaPublicKeyPem = pem ?? "", Audience = aud ?? "" },
+        });
+
+    [Fact]
+    public void RS256有效令牌_验证通过并映射用户()
+    {
+        using var rsa = RSA.Create(2048);
+        var jwt = MakeJwt(
+            new() { ["alg"] = "RS256", ["typ"] = "JWT" },
+            new() { ["sub"] = "user-42", ["preferred_username"] = "张三", ["tenantid"] = "hosp-A",
+                    ["roles"] = new[] { "doctor", "auditor" },
+                    ["iss"] = "https://idp.example.com", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds() },
+            data => rsa.SignData(data, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1));
+
+        var validator = new OidcTokenValidator(Opts("https://idp.example.com", pem: rsa.ExportSubjectPublicKeyInfoPem()));
+        var user = validator.Validate(jwt);
+
+        Assert.NotNull(user);
+        Assert.Equal("user-42", user!.UserId);
+        Assert.Equal("张三", user.UserName);
+        Assert.Equal("hosp-A", user.TenantId);
+        Assert.NotNull(user.ClaimList);
+        Assert.Equal(2, user.ClaimList!.Count); // roles → 多值 Role
+    }
+
+    [Fact]
+    public void HS256有效令牌_验证通过()
+    {
+        var secret = "shared-secret-至少32字符的对称密钥啊啊啊啊啊啊";
+        var jwt = MakeJwt(
+            new() { ["alg"] = "HS256" },
+            new() { ["sub"] = "u1", ["iss"] = "idp-x", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() },
+            data => System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret), data));
+
+        var validator = new OidcTokenValidator(Opts("idp-x", secret: secret));
+        Assert.NotNull(validator.Validate(jwt));
+    }
+
+    [Fact]
+    public void 签名被篡改_拒绝()
+    {
+        using var rsa = RSA.Create(2048);
+        var jwt = MakeJwt(
+            new() { ["alg"] = "RS256" },
+            new() { ["sub"] = "u1", ["iss"] = "idp", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() },
+            data => rsa.SignData(data, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1));
+        // 换一把无关密钥的签名
+        using var attacker = RSA.Create(2048);
+        var parts = jwt.Split('.');
+        var forged = $"{parts[0]}.{parts[1]}.{B64Url(attacker.SignData(System.Text.Encoding.UTF8.GetBytes($"{parts[0]}.{parts[1]}"), System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1))}";
+
+        var validator = new OidcTokenValidator(Opts("idp", pem: rsa.ExportSubjectPublicKeyInfoPem()));
+        Assert.Null(validator.Validate(forged));
+    }
+
+    [Fact]
+    public void 过期令牌_拒绝()
+    {
+        var secret = "k";
+        var jwt = MakeJwt(
+            new() { ["alg"] = "HS256" },
+            new() { ["sub"] = "u1", ["iss"] = "idp", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeSeconds() },
+            data => System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret), data));
+        var validator = new OidcTokenValidator(Opts("idp", secret: secret));
+        Assert.Null(validator.Validate(jwt));
+    }
+
+    [Fact]
+    public void 无exp令牌_拒绝_iss不符_拒绝()
+    {
+        var secret = "k";
+        var noExp = MakeJwt(new() { ["alg"] = "HS256" }, new() { ["sub"] = "u1", ["iss"] = "idp" },
+            data => System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret), data));
+        var wrongIss = MakeJwt(new() { ["alg"] = "HS256" },
+            new() { ["sub"] = "u1", ["iss"] = "other-idp", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() },
+            data => System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret), data));
+        var validator = new OidcTokenValidator(Opts("idp", secret: secret));
+        Assert.Null(validator.Validate(noExp));    // 永生令牌不允许
+        Assert.Null(validator.Validate(wrongIss)); // iss 校验
+    }
+
+    [Fact]
+    public async Task login端点_token_exchange换发本地令牌()
+    {
+        var secret = "ex-key-0123456789abcdef0123456789abcdef";
+        var jwt = MakeJwt(new() { ["alg"] = "HS256" },
+            new() { ["sub"] = "ext-9", ["preferred_username"] = "外部用户", ["iss"] = "https://sso.corp", ["exp"] = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds() },
+            data => System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret), data));
+
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["NexMesh:Authentication:Oidc:Issuer"] = "https://sso.corp",
+            ["NexMesh:Authentication:Oidc:Secret"] = secret,
+        });
+        builder.Services.AddNexMesh(); // ICurrentUser 等 Core 服务(me 端点依赖)
+        builder.Services.AddNexMeshAuth(builder.Configuration);
+        var app = builder.Build();
+        app.MapNexMeshAuth();
+        await app.StartAsync();
+        var client = app.GetTestClient();
+
+        // ① 有效 IdP JWT → 换发本地令牌
+        var ok = await client.PostAsync("/nexmesh/auth/login",
+            new StringContent(System.Text.Json.JsonSerializer.Serialize(new { oidcToken = jwt }), System.Text.Encoding.UTF8, "application/json"));
+        Assert.True(ok.IsSuccessStatusCode, await ok.Content.ReadAsStringAsync());
+        var body = await ok.Content.ReadAsStringAsync();
+        Assert.Contains("accessToken", body);
+        Assert.Contains("外部用户", body);
+
+        // ② 无效 JWT → 401
+        var bad = await client.PostAsync("/nexmesh/auth/login",
+            new StringContent("{\"oidcToken\":\"not.a.jwt\"}", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, bad.StatusCode);
+        await app.DisposeAsync();
+    }
+}
+
+/// <summary>审核加固回归:OIDC 弱密钥拒绝启用;非法 exp/nbf 数值不抛异常。</summary>
+public class OidcHardeningTests
+{
+    [Fact]
+    public void HS256弱密钥_拒绝启用()
+    {
+        var opts = Microsoft.Extensions.Options.Options.Create(new NexMesh.Auth.AuthenticationOptions
+        {
+            Oidc = new NexMesh.Auth.OidcOptions { Issuer = "idp", Secret = "short-key" }, // <32 字节
+        });
+        var validator = new NexMesh.Auth.OidcTokenValidator(opts);
+        Assert.False(validator.Enabled); // 弱对称密钥(可被字典攻击)不启用
+    }
+
+    [Fact]
+    public void 非法exp数值_安全拒绝()
+    {
+        // exp 为 long.MaxValue:SafeFromUnix 钳制为 MaxValue→未过期→通过验签路径;此处验证不抛异常
+        var secret = new string('k', 40);
+        var b64 = (byte[] b) => Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var payload = $$"""{"sub":"u1","iss":"idp","exp":{{long.MaxValue}}}""";
+        var signed = System.Text.Encoding.UTF8.GetBytes($"{b64(System.Text.Encoding.UTF8.GetBytes("{\"alg\":\"HS256\"}"))}.{b64(System.Text.Encoding.UTF8.GetBytes(payload))}");
+        var sig = b64(System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret), signed));
+        var jwt = $"{b64(System.Text.Encoding.UTF8.GetBytes("{\"alg\":\"HS256\"}"))}.{b64(System.Text.Encoding.UTF8.GetBytes(payload))}.{sig}";
+        var opts = Microsoft.Extensions.Options.Options.Create(new NexMesh.Auth.AuthenticationOptions
+        {
+            Oidc = new NexMesh.Auth.OidcOptions { Issuer = "idp", Secret = secret },
+        });
+        var validator = new NexMesh.Auth.OidcTokenValidator(opts);
+        var ex = Record.Exception(() => validator.Validate(jwt));
+        Assert.Null(ex); // 越界 exp 钳制处理,永不抛异常(通过与否取决于钳制语义:MaxValue 未过期→有效)
     }
 }

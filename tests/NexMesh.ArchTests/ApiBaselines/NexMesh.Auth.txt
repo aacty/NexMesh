@@ -12,6 +12,7 @@ namespace NexMesh.Auth
         public AuthenticationOptions() { }
         public NexMesh.Auth.ApiKeyOptions ApiKey { get; set; }
         public NexMesh.Auth.JwtOptions Jwt { get; set; }
+        public NexMesh.Auth.OidcOptions? Oidc { get; set; }
     }
     public interface IClaimsJournal
     {
@@ -95,6 +96,7 @@ namespace NexMesh.Auth
     public class LoginRequest : System.IEquatable<NexMesh.Auth.LoginRequest>
     {
         public LoginRequest(string Username, string Password) { }
+        public string? OidcToken { get; init; }
         public string Password { get; init; }
         public string Username { get; init; }
     }
@@ -191,6 +193,21 @@ namespace NexMesh.Auth
                 "Session",
                 "Renewed"})]
         public System.Threading.Tasks.Task<System.ValueTuple<NexMesh.Auth.TokenSession, bool>> TouchAsync(NexMesh.Auth.TokenSession session) { }
+    }
+    public sealed class OidcOptions
+    {
+        public OidcOptions() { }
+        public string Audience { get; set; }
+        public int ClockSkewSeconds { get; set; }
+        public string Issuer { get; set; }
+        public string RsaPublicKeyPem { get; set; }
+        public string Secret { get; set; }
+    }
+    public sealed class OidcTokenValidator
+    {
+        public OidcTokenValidator(Microsoft.Extensions.Options.IOptions<NexMesh.Auth.AuthenticationOptions> options) { }
+        public bool Enabled { get; }
+        public NexMesh.Auth.LoginUser? Validate(string jwt) { }
     }
     public sealed class RedisAuthStore : NexMesh.Auth.IClaimsJournal, NexMesh.Auth.ISessionStore, NexMesh.Auth.ITokenStore
     {

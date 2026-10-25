@@ -1,5 +1,10 @@
 namespace NexMesh.Data.Migrations
 {
+    public interface IMigrationLease : System.IDisposable { }
+    public interface IMigrationLock
+    {
+        System.Threading.Tasks.Task<NexMesh.Data.Migrations.IMigrationLease?> TryAcquireAsync(System.Threading.CancellationToken cancellationToken = default);
+    }
     public interface IMigrationRunner
     {
         System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default);
@@ -42,7 +47,7 @@ namespace NexMesh.Data.Migrations
     }
     public sealed class NexMeshMigrationRunner : NexMesh.Data.Migrations.IMigrationRunner
     {
-        public NexMeshMigrationRunner(System.IServiceProvider services, Microsoft.Extensions.Logging.ILogger<NexMesh.Data.Migrations.NexMeshMigrationRunner>? logger = null) { }
+        public NexMeshMigrationRunner(System.IServiceProvider services, Microsoft.Extensions.Logging.ILogger<NexMesh.Data.Migrations.NexMeshMigrationRunner>? logger = null, NexMesh.Data.Migrations.IMigrationLock? distributedLock = null) { }
         public System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default) { }
         public System.Threading.Tasks.Task<int> RunPendingAsync(System.Threading.CancellationToken cancellationToken = default) { }
     }
@@ -57,5 +62,16 @@ namespace NexMesh.Data.Migrations
         public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshMigration<TMigration>(this Microsoft.Extensions.DependencyInjection.IServiceCollection services)
             where TMigration : NexMesh.Data.Migrations.NexMeshMigration { }
         public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshMigrations(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration, params System.Reflection.Assembly[] migrationAssemblies) { }
+    }
+    public sealed class NoopMigrationLock : NexMesh.Data.Migrations.IMigrationLock
+    {
+        public static readonly NexMesh.Data.Migrations.NoopMigrationLock Instance;
+        public NoopMigrationLock() { }
+        public System.Threading.Tasks.Task<NexMesh.Data.Migrations.IMigrationLease?> TryAcquireAsync(System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class RedisMigrationLock : NexMesh.Data.Migrations.IMigrationLock
+    {
+        public RedisMigrationLock(StackExchange.Redis.IConnectionMultiplexer redis, string key = "nexmesh:migrations:lock", System.TimeSpan? lease = default, Microsoft.Extensions.Logging.ILogger<NexMesh.Data.Migrations.RedisMigrationLock>? logger = null) { }
+        public System.Threading.Tasks.Task<NexMesh.Data.Migrations.IMigrationLease?> TryAcquireAsync(System.Threading.CancellationToken cancellationToken = default) { }
     }
 }

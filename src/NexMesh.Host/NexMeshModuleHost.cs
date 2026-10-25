@@ -55,12 +55,21 @@ public static class NexMeshModuleHostExtensions
         // 模块清单留给 UseNexMeshHost 执行 ConfigureApplication
         hostSet.Modules.AddRange(mb.Modules);
 
-        // Kestrel 绑定:NexMesh:HttpPort 显式配置时生效(0.0.0.0 全接口监听)
-        if (mb.Options.HttpPort > 0)
+        // Kestrel 绑定:NexMesh:HttpPort 显式配置时生效(0.0.0.0 全接口监听);
+        // GrpcPort>0 且装配了 gRPC 面时追加 Http2 监听
+        if (mb.Options.HttpPort > 0 || mb.Options.GrpcPort > 0)
         {
+            var grpcEnabled = builder.Services.Any(d => d.ServiceType == typeof(NexMeshGrpcExtensions.ContractGrpcRegistry));
             builder.WebHost.ConfigureKestrel(options =>
             {
-                options.ListenAnyIP(mb.Options.HttpPort);
+                if (mb.Options.HttpPort > 0)
+                {
+                    options.ListenAnyIP(mb.Options.HttpPort);
+                }
+                if (mb.Options.GrpcPort > 0 && grpcEnabled)
+                {
+                    options.ListenAnyIP(mb.Options.GrpcPort, listen => listen.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http2);
+                }
             });
         }
         return builder;
@@ -85,6 +94,10 @@ public static class NexMeshModuleHostExtensions
         app.UseAuthorization();
         NexMeshHostExtensions.UseNexMeshRateLimiting(app); // 注册过 AddNexMeshRateLimiter 才挂(未注册零开销)
         app.MapNexMeshContracts(hostSet.Assemblies);
+        if (app.Services.GetService<NexMeshGrpcExtensions.ContractGrpcRegistry>() is not null)
+        {
+            app.MapNexMeshGrpc(); // 契约 gRPC 面(AddNexMeshGrpc 注册过才挂)
+        }
         app.MapNexMeshHealth();
         app.MapNexMeshDocs();
         return app;

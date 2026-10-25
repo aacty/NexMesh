@@ -66,6 +66,9 @@ public sealed class AuthenticationOptions
 {
     public JwtOptions Jwt { get; set; } = new();
 
+    /// <summary>外部 OIDC IdP 验证(配置 Issuer+密钥即启用;token-exchange 换发本地令牌)。</summary>
+    public OidcOptions? Oidc { get; set; }
+
     public ApiKeyOptions ApiKey { get; set; } = new();
 }
 

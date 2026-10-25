@@ -42,6 +42,12 @@ public static class NexMeshMigrationsServiceCollectionExtensions
             }
         }
 
+        // 分布式锁(可选):注册期不探测(Redis 连接可能晚于本调用注册),工厂内运行期解析——
+        // 容器有 IConnectionMultiplexer 即 Redis 租约锁(多实例互斥),否则 Noop 锁(单实例语义不变)
+        services.AddSingleton<IMigrationLock>(sp =>
+            sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } mux
+                ? new RedisMigrationLock(mux, configuration["NexMesh:Migrations:LockKey"] ?? "nexmesh:migrations:lock")
+                : NoopMigrationLock.Instance);
         services.AddSingleton<IMigrationRunner, NexMeshMigrationRunner>();
         if (options.Enabled)
         {

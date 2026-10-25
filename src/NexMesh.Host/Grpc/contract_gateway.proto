@@ -1,0 +1,19 @@
+syntax = "proto3";
+package nexmesh.contract;
+option csharp_namespace = "NexMesh.Grpc";
+
+// 通用契约网关:业务 IServiceApi 契约零生成,经此单一 unary 方法按 (service, method) 路由。
+// args_json 为 {"参数名":值} 对象;reply_json 为 REST 同款 ApiResult 信封。
+message ContractCall {
+  string service = 1;   // 契约服务名(如 "order",与 REST 路由段一致)
+  string method = 2;    // 方法名(去 Async,如 "Search")
+  string args_json = 3; // {"参数名":值};缺省参数可省略
+}
+
+message ContractReply {
+  string envelope_json = 1; // ApiResult 信封 JSON
+}
+
+service ContractGateway {
+  rpc Invoke (ContractCall) returns (ContractReply);
+}
