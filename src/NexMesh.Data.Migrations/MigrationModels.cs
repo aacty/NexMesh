@@ -94,4 +94,13 @@ public interface IMigrationRunner
 
     /// <summary>回滚指定版本(执行 DownAsync 并删记录);不会自动触发。</summary>
     Task RevertAsync(string source, long version, CancellationToken cancellationToken = default);
+
+    /// <summary>列出已应用迁移(Dashboard 展示;按源分组升序)。库不可达的源返回空,不抛出。</summary>
+    Task<List<MigrationSummary>> ListAppliedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>列出待应用迁移(版本/名称/源;不执行——Dashboard 预览用)。库不可达的源返回空。</summary>
+    Task<List<MigrationSummary>> ListPendingAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>迁移记录摘要(Dashboard 展示投影,不含 Checksum)。</summary>
+public sealed record MigrationSummary(string Source, long Version, string Name, DateTime AppliedAt, int DurationMs);

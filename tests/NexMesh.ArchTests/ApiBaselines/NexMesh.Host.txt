@@ -1,0 +1,108 @@
+namespace NexMesh.Grpc
+{
+    [System.Diagnostics.DebuggerDisplay("{ToString(),nq}")]
+    public sealed class ContractCall : Google.Protobuf.IBufferMessage, Google.Protobuf.IDeepCloneable<NexMesh.Grpc.ContractCall>, Google.Protobuf.IMessage, Google.Protobuf.IMessage<NexMesh.Grpc.ContractCall>, System.IEquatable<NexMesh.Grpc.ContractCall>
+    {
+        public const int ArgsJsonFieldNumber = 3;
+        public const int MethodFieldNumber = 2;
+        public const int ServiceFieldNumber = 1;
+        public ContractCall() { }
+        public ContractCall(NexMesh.Grpc.ContractCall other) { }
+        public string ArgsJson { get; set; }
+        public string Method { get; set; }
+        public string Service { get; set; }
+        public static Google.Protobuf.Reflection.MessageDescriptor Descriptor { get; }
+        public static Google.Protobuf.MessageParser<NexMesh.Grpc.ContractCall> Parser { get; }
+        public int CalculateSize() { }
+        public NexMesh.Grpc.ContractCall Clone() { }
+        public bool Equals(NexMesh.Grpc.ContractCall other) { }
+        public override bool Equals(object other) { }
+        public override int GetHashCode() { }
+        public void MergeFrom(Google.Protobuf.CodedInputStream input) { }
+        public void MergeFrom(NexMesh.Grpc.ContractCall other) { }
+        public override string ToString() { }
+        public void WriteTo(Google.Protobuf.CodedOutputStream output) { }
+    }
+    public static class ContractGateway
+    {
+        public static Google.Protobuf.Reflection.ServiceDescriptor Descriptor { get; }
+        public static Grpc.Core.ServerServiceDefinition BindService(NexMesh.Grpc.ContractGateway.ContractGatewayBase serviceImpl) { }
+        public static void BindService(Grpc.Core.ServiceBinderBase serviceBinder, NexMesh.Grpc.ContractGateway.ContractGatewayBase serviceImpl) { }
+        [Grpc.Core.BindServiceMethod(typeof(NexMesh.Grpc.ContractGateway), "BindService")]
+        public abstract class ContractGatewayBase
+        {
+            protected ContractGatewayBase() { }
+            public virtual System.Threading.Tasks.Task<NexMesh.Grpc.ContractReply> Invoke(NexMesh.Grpc.ContractCall request, Grpc.Core.ServerCallContext context) { }
+        }
+        public class ContractGatewayClient : Grpc.Core.ClientBase<NexMesh.Grpc.ContractGateway.ContractGatewayClient>
+        {
+            protected ContractGatewayClient() { }
+            public ContractGatewayClient(Grpc.Core.CallInvoker callInvoker) { }
+            public ContractGatewayClient(Grpc.Core.ChannelBase channel) { }
+            protected ContractGatewayClient(Grpc.Core.ClientBase.ClientBaseConfiguration configuration) { }
+            public virtual NexMesh.Grpc.ContractReply Invoke(NexMesh.Grpc.ContractCall request, Grpc.Core.CallOptions options) { }
+            public virtual NexMesh.Grpc.ContractReply Invoke(NexMesh.Grpc.ContractCall request, Grpc.Core.Metadata headers = null, System.DateTime? deadline = default, System.Threading.CancellationToken cancellationToken = default) { }
+            public virtual Grpc.Core.AsyncUnaryCall<NexMesh.Grpc.ContractReply> InvokeAsync(NexMesh.Grpc.ContractCall request, Grpc.Core.CallOptions options) { }
+            public virtual Grpc.Core.AsyncUnaryCall<NexMesh.Grpc.ContractReply> InvokeAsync(NexMesh.Grpc.ContractCall request, Grpc.Core.Metadata headers = null, System.DateTime? deadline = default, System.Threading.CancellationToken cancellationToken = default) { }
+            protected override NexMesh.Grpc.ContractGateway.ContractGatewayClient NewInstance(Grpc.Core.ClientBase.ClientBaseConfiguration configuration) { }
+        }
+    }
+    public static class ContractGatewayReflection
+    {
+        public static Google.Protobuf.Reflection.FileDescriptor Descriptor { get; }
+    }
+    [System.Diagnostics.DebuggerDisplay("{ToString(),nq}")]
+    public sealed class ContractReply : Google.Protobuf.IBufferMessage, Google.Protobuf.IDeepCloneable<NexMesh.Grpc.ContractReply>, Google.Protobuf.IMessage, Google.Protobuf.IMessage<NexMesh.Grpc.ContractReply>, System.IEquatable<NexMesh.Grpc.ContractReply>
+    {
+        public const int EnvelopeJsonFieldNumber = 1;
+        public ContractReply() { }
+        public ContractReply(NexMesh.Grpc.ContractReply other) { }
+        public string EnvelopeJson { get; set; }
+        public static Google.Protobuf.Reflection.MessageDescriptor Descriptor { get; }
+        public static Google.Protobuf.MessageParser<NexMesh.Grpc.ContractReply> Parser { get; }
+        public int CalculateSize() { }
+        public NexMesh.Grpc.ContractReply Clone() { }
+        public bool Equals(NexMesh.Grpc.ContractReply other) { }
+        public override bool Equals(object other) { }
+        public override int GetHashCode() { }
+        public void MergeFrom(Google.Protobuf.CodedInputStream input) { }
+        public void MergeFrom(NexMesh.Grpc.ContractReply other) { }
+        public override string ToString() { }
+        public void WriteTo(Google.Protobuf.CodedOutputStream output) { }
+    }
+}
+namespace NexMesh.Host
+{
+    public static class NexMeshDashboardExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshDashboard(this Microsoft.Extensions.DependencyInjection.IServiceCollection services) { }
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshDashboard(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints, bool requireAuthorization = true, bool force = false) { }
+    }
+    public static class NexMeshGrpcExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshGrpc(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, params System.Reflection.Assembly[] assemblies) { }
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshGrpc(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints) { }
+        public sealed class ContractGatewayService : NexMesh.Grpc.ContractGateway.ContractGatewayBase
+        {
+            public ContractGatewayService(NexMesh.Host.NexMeshGrpcExtensions.ContractGrpcRegistry registry, Microsoft.Extensions.Logging.ILogger<NexMesh.Host.NexMeshGrpcExtensions.ContractGatewayService>? logger = null) { }
+            public override System.Threading.Tasks.Task<NexMesh.Grpc.ContractReply> Invoke(NexMesh.Grpc.ContractCall request, Grpc.Core.ServerCallContext context) { }
+        }
+        public sealed class ContractGrpcRegistry
+        {
+            public ContractGrpcRegistry(System.Reflection.Assembly[] assemblies) { }
+            public System.Reflection.Assembly[] Assemblies { get; }
+            public NexMesh.Core.AutoApi.AutoApiEndpoint? Find(string service, string method) { }
+        }
+    }
+    public static class NexMeshHostExtensions
+    {
+        public static Microsoft.AspNetCore.Builder.WebApplicationBuilder AddNexMeshService(this Microsoft.AspNetCore.Builder.WebApplicationBuilder builder, params System.Reflection.Assembly[] assemblies) { }
+        public static Microsoft.AspNetCore.Builder.WebApplication UseNexMeshService(this Microsoft.AspNetCore.Builder.WebApplication app, params System.Reflection.Assembly[] assemblies) { }
+    }
+    public static class NexMeshModuleHostExtensions
+    {
+        public static Microsoft.AspNetCore.Builder.WebApplicationBuilder AddNexMeshHost(this Microsoft.AspNetCore.Builder.WebApplicationBuilder builder, System.Action<NexMesh.Core.NexMeshBuilder>? configure = null) { }
+        public static Microsoft.AspNetCore.Builder.WebApplicationBuilder AddNexMeshHost(this Microsoft.AspNetCore.Builder.WebApplicationBuilder builder, System.Reflection.Assembly[]? assemblies, System.Action<NexMesh.Core.NexMeshBuilder>? configure = null) { }
+        public static Microsoft.AspNetCore.Builder.WebApplication UseNexMeshHost(this Microsoft.AspNetCore.Builder.WebApplication app) { }
+    }
+}

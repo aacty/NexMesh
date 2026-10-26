@@ -66,7 +66,26 @@ public interface ISessionStore
     Task SaveAsync(TokenSession session);
     Task<TokenSession?> GetAsync(string token);
     Task RevokeAsync(string token);
+
+    /// <summary>
+    /// 列出活跃(未吊销未过期)会话摘要(Dashboard/运维用;默认空——自定义实现者不受影响,
+    /// 内存/Redis 内置实现提供)。摘要不含 Token 明文(仅前缀),防泄露。
+    /// </summary>
+    Task<List<SessionSummary>> ListActiveAsync(CancellationToken ct = default) => Task.FromResult(new List<SessionSummary>());
+
+    /// <summary>吊销某用户全部活跃会话(Dashboard 踢下线;默认空——自定义实现者不受影响)。返回吊销条数。</summary>
+    Task<int> RevokeByUserAsync(string userId, CancellationToken ct = default) => Task.FromResult(0);
 }
+
+/// <summary>会话摘要(Dashboard 展示;Token 打码)。</summary>
+public sealed record SessionSummary(
+    string TokenPrefix,
+    string UserId,
+    string? UserName,
+    string? TenantId,
+    DateTime IssuedAt,
+    DateTime LastActivityAt,
+    DateTime ExpiresAt);
 
 /// <summary>内存会话存储(单实例部署/开发/测试;多实例集群用 Redis 实现)。</summary>
 public sealed class MemorySessionStore : ISessionStore
@@ -98,6 +117,32 @@ public sealed class MemorySessionStore : ISessionStore
             _sessions[session.Token] = session with { Revoked = true };
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>活跃会话清单(快照语义:枚举期间新建的会话可能缺席,展示用途可接受)。</summary>
+    public Task<List<SessionSummary>> ListActiveAsync(CancellationToken ct = default)
+    {
+        var now = DateTime.Now;
+        var list = _sessions.Values
+            .Where(s => !s.Revoked && s.ExpiresAt > now)
+            .OrderByDescending(s => s.LastActivityAt)
+            .Select(s => new SessionSummary(
+                s.Token.Length > 8 ? s.Token[..8] + "…" : s.Token,
+                s.UserId, s.UserName, s.TenantId, s.IssuedAt, s.LastActivityAt, s.ExpiresAt))
+            .ToList();
+        return Task.FromResult(list);
+    }
+
+    public Task<int> RevokeByUserAsync(string userId, CancellationToken ct = default)
+    {
+        var targets = _sessions.Values
+            .Where(s => s.UserId == userId && !s.Revoked)
+            .ToList();
+        foreach (var session in targets)
+        {
+            _sessions[session.Token] = session with { Revoked = true };
+        }
+        return Task.FromResult(targets.Count);
     }
 
     /// <summary>

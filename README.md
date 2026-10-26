@@ -12,7 +12,7 @@
 用 .NET 写后端:接口、登录、数据库、缓存、定时任务、AI 对接——
 传统要配十几样东西,NexMesh 里**大部分只写一行或一个标注**。
 
-**第一次接触?** [快速开始](docs/快速开始.md)(15 分钟从零跑通)→ [包实战案例](docs/包实战案例.md)(12 个包逐个上手)→ [大型项目指南](docs/大型项目指南.md)(项目变大后怎么组织)
+**第一次接触?** [快速开始](docs/快速开始.md)(15 分钟从零跑通)→ [包实战案例](docs/包实战案例.md)(13 个包逐个上手)→ [大型项目指南](docs/大型项目指南.md)(项目变大后怎么组织)
 
 </div>
 
@@ -242,7 +242,7 @@ NexMesh.Host               ← 业务项目只引这一个
 
 **已发布 [NuGet.org](https://www.nuget.org/packages?q=NexMesh)(0.0.4)**:`dotnet add package NexMesh.Host` 即用。
 
-### ✅ 已交付(22 项能力)
+### ✅ 已交付(28 项能力)
 
 <details>
 <summary>点击展开完整清单</summary>
@@ -271,6 +271,12 @@ NexMesh.Host               ← 业务项目只引这一个
 | 20 | 进程内事件总线 | Events |
 | 21 | 依赖规则测试 + 公共 API 基线 | tests/NexMesh.ArchTests |
 | 22 | 性能基准 | benchmarks/NexMesh.Benchmarks |
+| 23 | 框架管理台(能力探测:概览/AI/审批/作业/事件) | Host |
+| 24 | OIDC 外部 IdP 对接(token-exchange) | Auth |
+| 25 | 自建 OIDC IdP(授权码+PKCE / 发现文档 / JWKS) | Auth |
+| 26 | 数据库 SQL 迁移(分布式锁) | Data.Migrations |
+| 27 | 契约 gRPC 面(通用网关) | Host |
+| 28 | 服务发现(Redis 注册表) | Cache |
 
 </details>
 
@@ -279,7 +285,7 @@ NexMesh.Host               ← 业务项目只引这一个
 | 项 | 状态 |
 |---|---|
 | CI/CD 适配 | 进行中 |
-| OIDC 单点登录 / gRPC / 数据库 SQL 迁移 | 规划中 |
+| OIDC 单点登录 / gRPC / 数据库 SQL 迁移 | ✅ 已交付 |
 | Blazor 管理界面 | 低优先级 |
 
 质量保障机制(测试/公共 API 基线/性能基准)见 [框架质量保障](docs/框架质量契约.md)。
@@ -291,7 +297,7 @@ NexMesh.Host               ← 业务项目只引这一个
 | 文档 | 你会学到 |
 |---|---|
 | [快速开始](docs/快速开始.md) | 从零 15 分钟跑通(新手从这里开始) |
-| [包实战案例](docs/包实战案例.md) | 12 个包逐个上手,每个包一份分步骤案例 |
+| [包实战案例](docs/包实战案例.md) | 13 个包逐个上手,每个包一份分步骤案例 |
 | [大型项目指南](docs/大型项目指南.md) | 项目变大后的分层/多库/多租户/上线清单 |
 | [配置参考](docs/配置参考.md) | 全部配置节 + 可复制模板 |
 | [错误码参考](docs/错误码参考.md) | 40xxx/50xxx 清单 + 出错怎么办 |

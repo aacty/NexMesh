@@ -11,18 +11,27 @@
   <ItemGroup>
     <!-- gRPC 面:契约双面输出(JSON-over-gRPC 动态注册) -->
     <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NexMesh.Core\NexMesh.Core.csproj" />
     <ProjectReference Include="..\NexMesh.AI\NexMesh.AI.csproj" />
+    <ProjectReference Include="..\NexMesh.AI.Approval\NexMesh.AI.Approval.csproj" />
+    <ProjectReference Include="..\NexMesh.Events\NexMesh.Events.csproj" />
     <ProjectReference Include="..\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
+    <ProjectReference Include="..\NexMesh.Data.Migrations\NexMesh.Data.Migrations.csproj" />
     <ProjectReference Include="..\NexMesh.Cache\NexMesh.Cache.csproj" />
     <ProjectReference Include="..\NexMesh.Auth\NexMesh.Auth.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Protobuf Include="Grpc/contract_gateway.proto" GrpcServices="Both" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Dashboard 静态页内嵌(Hangfire.AspNetCore 同模式:管理台随宿主包) -->
+    <EmbeddedResource Include="Dashboard\wwwroot\index.html" />
   </ItemGroup>
 </Project>

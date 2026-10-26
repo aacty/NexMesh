@@ -9,10 +9,13 @@
     <ProjectReference Include="..\..\src\NexMesh.Core\NexMesh.Core.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Auth\NexMesh.Auth.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Events\NexMesh.Events.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Cache\NexMesh.Cache.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="FreeSql.Provider.Sqlite" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
 

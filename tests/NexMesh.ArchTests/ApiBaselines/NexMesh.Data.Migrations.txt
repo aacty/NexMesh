@@ -7,6 +7,8 @@ namespace NexMesh.Data.Migrations
     }
     public interface IMigrationRunner
     {
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListAppliedAsync(System.Threading.CancellationToken cancellationToken = default);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListPendingAsync(System.Threading.CancellationToken cancellationToken = default);
         System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default);
         System.Threading.Tasks.Task<int> RunPendingAsync(System.Threading.CancellationToken cancellationToken = default);
     }
@@ -30,6 +32,15 @@ namespace NexMesh.Data.Migrations
         [FreeSql.DataAnnotations.Column(Name="version")]
         public long Version { get; set; }
     }
+    public sealed class MigrationSummary : System.IEquatable<NexMesh.Data.Migrations.MigrationSummary>
+    {
+        public MigrationSummary(string Source, long Version, string Name, System.DateTime AppliedAt, int DurationMs) { }
+        public System.DateTime AppliedAt { get; init; }
+        public int DurationMs { get; init; }
+        public string Name { get; init; }
+        public string Source { get; init; }
+        public long Version { get; init; }
+    }
     public abstract class NexMeshMigration
     {
         protected NexMeshMigration() { }
@@ -48,6 +59,8 @@ namespace NexMesh.Data.Migrations
     public sealed class NexMeshMigrationRunner : NexMesh.Data.Migrations.IMigrationRunner
     {
         public NexMeshMigrationRunner(System.IServiceProvider services, Microsoft.Extensions.Logging.ILogger<NexMesh.Data.Migrations.NexMeshMigrationRunner>? logger = null, NexMesh.Data.Migrations.IMigrationLock? distributedLock = null) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListAppliedAsync(System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListPendingAsync(System.Threading.CancellationToken cancellationToken = default) { }
         public System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default) { }
         public System.Threading.Tasks.Task<int> RunPendingAsync(System.Threading.CancellationToken cancellationToken = default) { }
     }

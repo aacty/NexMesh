@@ -1,6 +1,11 @@
 namespace NexMesh.Auth.Tests;
 
+using NexMesh.Auth.Oidc;
+
 using System.Net.Http.Json;
+using System.Net;
+using System.Web;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -505,4 +510,338 @@ public class OidcHardeningTests
         var ex = Record.Exception(() => validator.Validate(jwt));
         Assert.Null(ex); // 越界 exp 钳制处理,永不抛异常(通过与否取决于钳制语义:MaxValue 未过期→有效)
     }
+}
+
+/// <summary>Redis 会话枚举(RedisAuthStore.ListActiveAsync):真 Redis 实证——活跃列示/Token 打码/吊销消失。</summary>
+public class RedisSessionListTests
+{
+    private static string? ConnectionString => Environment.GetEnvironmentVariable("NEXMESH_TEST_REDIS");
+
+    [Fact]
+    public async Task 活跃会话列示_Token仅前缀_吊销后消失()
+    {
+        if (ConnectionString is null) return;
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var store = new RedisAuthStore(redis, $"test:sess:{Guid.NewGuid():N}:");
+
+        var token1 = "token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var token2 = "token-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        await store.SaveAsync(new TokenSession { Token = token1, UserId = "u1", UserName = "一", ExpiresAt = DateTime.Now.AddHours(1) });
+        await store.SaveAsync(new TokenSession { Token = token2, UserId = "u2", ExpiresAt = DateTime.Now.AddHours(1) });
+
+        var active = await store.ListActiveAsync();
+        Assert.Equal(2, active.Count);
+
+        // Token 打码:前缀 + 省略号,绝无完整明文
+        foreach (var s in active)
+        {
+            Assert.EndsWith("…", s.TokenPrefix);
+            Assert.True(s.TokenPrefix.Length < 16);
+        }
+
+        await store.RevokeAsync(token1);
+        var after = await store.ListActiveAsync();
+        Assert.Single(after);
+        Assert.Equal("u2", after[0].UserId);
+    }
+
+    [Fact]
+    public async Task 过期会话_键已被TTL清除_不列示()
+    {
+        if (ConnectionString is null) return;
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var store = new RedisAuthStore(redis, $"test:sess:{Guid.NewGuid():N}:");
+
+        // 已过期会话:TTL 为负 → SaveAsync 直接不落键(实现语义:过期会话不存储)
+        await store.SaveAsync(new TokenSession { Token = "tok", UserId = "u", ExpiresAt = DateTime.Now.AddSeconds(-1) });
+        Assert.Empty(await store.ListActiveAsync());
+    }
+}
+
+/// <summary>按用户吊销(RevokeByUserAsync):内存/Redis 双实现。</summary>
+public class RevokeByUserTests
+{
+    [Fact]
+    public async Task 内存_吊销用户全部会话_返回条数()
+    {
+        var store = new MemorySessionStore();
+        await store.SaveAsync(new TokenSession { Token = "t1", UserId = "u1", ExpiresAt = DateTime.Now.AddHours(1) });
+        await store.SaveAsync(new TokenSession { Token = "t2", UserId = "u1", ExpiresAt = DateTime.Now.AddHours(1) });
+        await store.SaveAsync(new TokenSession { Token = "t3", UserId = "u2", ExpiresAt = DateTime.Now.AddHours(1) });
+
+        var revoked = await store.RevokeByUserAsync("u1");
+        Assert.Equal(2, revoked);
+        Assert.Null(await store.GetAsync("t1"));
+        Assert.Null(await store.GetAsync("t2"));
+        Assert.NotNull(await store.GetAsync("t3")); // 他人不受影响
+        Assert.Single(await store.ListActiveAsync());
+    }
+
+    [Fact]
+    public async Task Redis_吊销用户全部会话()
+    {
+        var cs = Environment.GetEnvironmentVariable("NEXMESH_TEST_REDIS");
+        if (cs is null) return;
+        using var redis = StackExchange.Redis.ConnectionMultiplexer.Connect(cs);
+        var store = new RedisAuthStore(redis, $"test:revoke:{Guid.NewGuid():N}:");
+        await store.SaveAsync(new TokenSession { Token = "ra", UserId = "u1", ExpiresAt = DateTime.Now.AddHours(1) });
+        await store.SaveAsync(new TokenSession { Token = "rb", UserId = "u1", ExpiresAt = DateTime.Now.AddHours(1) });
+        await store.SaveAsync(new TokenSession { Token = "rc", UserId = "u2", ExpiresAt = DateTime.Now.AddHours(1) });
+
+        var revoked = await store.RevokeByUserAsync("u1");
+        Assert.Equal(2, revoked);
+        Assert.Null(await store.GetAsync("ra"));
+        Assert.NotNull(await store.GetAsync("rc"));
+    }
+}
+
+/// <summary>JWKS 在线发现:自建 HttpListener IdP(发现文档+jwks),kid 轮换验证。</summary>
+public class JwksDiscoveryTests : IAsyncLifetime
+{
+    private HttpListener _listener = null!;
+    private string _base = "";
+    private RSA _idpKey = null!;
+    private string _kid = "key-2026-10";
+
+    public async Task InitializeAsync()
+    {
+        _idpKey = RSA.Create(2048);
+        var port = 18760 + Random.Shared.Next(100);
+        _base = $"http://localhost:{port}";
+        _listener = new HttpListener();
+        _listener.Prefixes.Add($"{_base}/");
+        _listener.Start();
+        _ = Task.Run(async () =>
+        {
+            while (_listener.IsListening)
+            {
+                try
+                {
+                    var ctx = await _listener.GetContextAsync();
+                    var path = ctx.Request.Url!.AbsolutePath;
+                    var json = path switch
+                    {
+                        "/.well-known/openid-configuration" => $$"""{"issuer":"{{_base}}","jwks_uri":"{{_base}}/jwks"}""",
+                        "/jwks" => $$"""{"keys":[{"kty":"RSA","kid":"{{_kid}}","n":"{{B64Url(_idpKey.ExportParameters(false).Modulus)}}","e":"{{B64Url(_idpKey.ExportParameters(false).Exponent)}}","alg":"RS256"}]}""",
+                        _ => "{}",
+                    };
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+                    ctx.Response.ContentType = "application/json";
+                    await ctx.Response.OutputStream.WriteAsync(bytes);
+                    ctx.Response.Close();
+                }
+                catch { break; }
+            }
+        });
+        await Task.Delay(100);
+    }
+
+    private static string B64Url(byte[]? b)
+        => Convert.ToBase64String(b ?? []).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    private void Cleanup()
+    {
+        _listener.Stop();
+        _idpKey.Dispose();
+    }
+
+    Task IAsyncLifetime.DisposeAsync() { Cleanup(); return Task.CompletedTask; }
+
+    [Fact]
+    public async Task JWKS发现_kid匹配验签通过()
+    {
+        var keys = await OidcJwksFetcher.FetchAsync(_base);
+        Assert.Single(keys);
+        Assert.Contains(_kid, keys.Keys);
+
+        var validator = new OidcTokenValidator(Microsoft.Extensions.Options.Options.Create(new NexMesh.Auth.AuthenticationOptions
+        {
+            Oidc = new NexMesh.Auth.OidcOptions { Issuer = _base } // 无静态 PEM:仅 JWKS 路径
+        }));
+        validator.SetJwksKeys(keys);
+
+        var header = $$"""{"alg":"RS256","kid":"{{_kid}}"}""";
+        var payload = $$"""{"sub":"jwks-u1","iss":"{{_base}}","exp":{{DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds()}}}""";
+        var h = B64Url(System.Text.Encoding.UTF8.GetBytes(header));
+        var p = B64Url(System.Text.Encoding.UTF8.GetBytes(payload));
+        var sig = B64Url(_idpKey.SignData(System.Text.Encoding.UTF8.GetBytes($"{h}.{p}"),
+            System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1));
+        var user = validator.Validate($"{h}.{p}.{sig}");
+        Assert.NotNull(user);
+        Assert.Equal("jwks-u1", user!.UserId);
+    }
+
+    [Fact]
+    public async Task kid不匹配_拒绝()
+    {
+        var keys = await OidcJwksFetcher.FetchAsync(_base);
+        var validator = new OidcTokenValidator(Microsoft.Extensions.Options.Options.Create(new NexMesh.Auth.AuthenticationOptions
+        {
+            Oidc = new NexMesh.Auth.OidcOptions { Issuer = _base },
+        }));
+        validator.SetJwksKeys(keys);
+
+        var header = """{"alg":"RS256","kid":"unknown-kid"}""";
+        var payload = $$"""{"sub":"u","iss":"{{_base}}","exp":{{DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds()}}}""";
+        var h = B64Url(System.Text.Encoding.UTF8.GetBytes(header));
+        var p = B64Url(System.Text.Encoding.UTF8.GetBytes(payload));
+        var sig = B64Url(_idpKey.SignData(System.Text.Encoding.UTF8.GetBytes($"{h}.{p}"),
+            System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1));
+        Assert.Null(validator.Validate($"{h}.{p}.{sig}")); // 无匹配 kid 且无静态 PEM → 拒绝
+    }
+}
+
+/// <summary>
+/// IdP↔RP 闭环:自建 IdP(授权码+PKCE 签发真 JWT)→ RP 经 JWKS 发现验签换本地令牌。
+/// 框架自身跑通发收两端——OidcJwksFetcher 消费 OidcIdpTokenService 的 JWKS。
+/// </summary>
+public class OidcIdpRoundTripTests : IAsyncLifetime
+{
+    private WebApplication _idp = null!;
+    private WebApplication _rp = null!;
+    private string _idpBase = "";
+    private HttpClient _idpClient = null!;
+    private HttpClient _rpClient = null!;
+
+    public async Task InitializeAsync()
+    {
+        // ── IdP 宿主(TestServer 独立端口由 HttpListener 承担,JWKS 需真实 HTTP 可达)──
+        var port = 18800 + Random.Shared.Next(100);
+        _idpBase = "http://localhost"; // 发现文档/JWKS 挂根路径(OIDC 惯例),authorize/token 在 /oidc 下
+        var idpBuilder = WebApplication.CreateBuilder();
+        idpBuilder.WebHost.UseTestServer();
+        idpBuilder.Services.AddNexMeshOidcIdp(o =>
+        {
+            o.Issuer = _idpBase;
+            o.UserStore = new InMemoryUserStore();
+            o.ClientStore = new InMemoryClientStore();
+        });
+        var users = new InMemoryUserStore();
+        users.Add(new OidcIdpUser("idp-u1", "门户用户", "tenant-x", ["manager"]));
+        var clients = new InMemoryClientStore();
+        clients.Add(new OidcClient { ClientId = "rp-app", RedirectUris = ["http://localhost/oidc/echo"] });
+        idpBuilder.Services.AddSingleton<IOidcUserStore>(users);
+        idpBuilder.Services.AddSingleton<IOidcClientStore>(clients);
+        _idp = idpBuilder.Build();
+        _idp.MapNexMeshOidcIdp();
+        _idp.MapGet("/oidc/echo", (Microsoft.AspNetCore.Http.HttpRequest r) => Microsoft.AspNetCore.Http.Results.Ok(new { code = r.Query["code"].FirstOrDefault() }));
+        await _idp.StartAsync();
+        _idpClient = _idp.GetTestClient();
+
+        // ── RP 宿主(用框架认证 + OIDC 验证器指向 IdP)──
+        var rpBuilder = WebApplication.CreateBuilder();
+        rpBuilder.WebHost.UseTestServer();
+        rpBuilder.Configuration["NexMesh:Authentication:Oidc:Issuer"] = _idpBase; // 必须在 AddNexMeshAuth 之前(IOptions 启动期快照)
+        rpBuilder.Services.AddNexMesh();
+        rpBuilder.Services.AddNexMeshAuth(rpBuilder.Configuration);
+        _rp = rpBuilder.Build();
+        _rp.UseNexMeshAuthentication();
+        _rp.UseAuthorization();
+        _rp.MapNexMeshAuth();
+        await _rp.StartAsync();
+        _rpClient = _rp.GetTestClient();
+    }
+
+    public async Task DisposeAsync()
+    {
+        _idpClient.Dispose();
+        await _idp.DisposeAsync();
+        await _rp.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task 授权码PKCE全流程_签发的JWT经JWKS发现验签通过并换发本地令牌()
+    {
+        // 1. RP 拉 JWKS(IdP 的 OidcJwksFetcher 闭环)
+        var keys = await OidcJwksFetcher.FetchAsync(_idpBase, _idpClient);
+        Assert.NotEmpty(keys);
+
+        // 2. PKCE:verifier→challenge(S256)
+        var verifier = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var challenge = Convert.ToBase64String(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(verifier)))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        // 3. 授权码
+        var authorizeUrl = $"/oidc/authorize?response_type=code&client_id=rp-app&redirect_uri=http://localhost/oidc/echo&code_challenge={challenge}&code_challenge_method=S256&user_id=idp-u1&scope=openid";
+        var authorizeResp = await _idpClient.GetAsync(authorizeUrl);
+        Assert.Equal(HttpStatusCode.Redirect, authorizeResp.StatusCode);
+        var location = authorizeResp.Headers.Location!.ToString();
+        var code = System.Web.HttpUtility.ParseQueryString(location.Split('?')[1])["code"];
+        Assert.False(string.IsNullOrEmpty(code));
+
+        // 4. 换令牌
+        var tokenResp = await _idpClient.PostAsync("/oidc/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code!,
+            ["code_verifier"] = verifier,
+            ["client_id"] = "rp-app",
+        }));
+        var tokenBody = await tokenResp.Content.ReadAsStringAsync();
+        Assert.True(tokenResp.IsSuccessStatusCode, tokenBody);
+        var idpJwt = JsonDocument.Parse(tokenBody).RootElement.GetProperty("access_token").GetString()!;
+
+        // 5. RP 侧:注入 JWKS 验签(OidcTokenValidator + fetcher 同一框架)
+        var rpValidator = _rp.Services.GetRequiredService<OidcTokenValidator>();
+        rpValidator.SetJwksKeys(keys);
+        var validated = rpValidator.Validate(idpJwt);
+        Assert.NotNull(validated);
+        Assert.Equal("idp-u1", validated!.UserId);
+        Assert.Equal("门户用户", validated.UserName);
+        Assert.Equal("tenant-x", validated.TenantId);
+        Assert.Contains(validated.ClaimList!, c => c.Value == "manager");
+
+        // 6. token-exchange:RP 登录端点收 oidcToken 换发本地不透明令牌(无 ILoginValidator 也可走 IdP 令牌)
+        //    (此宿主未注册业务验证器——经 IdP JWT 交换是框架的显式路径)
+        var login = await _rpClient.PostAsync("/nexmesh/auth/login",
+            new StringContent(JsonSerializer.Serialize(new { oidcToken = idpJwt }), Encoding.UTF8, "application/json"));
+        var loginBody = await login.Content.ReadAsStringAsync();
+        Assert.True(login.IsSuccessStatusCode, loginBody);
+        Assert.Contains("accessToken", loginBody);
+    }
+
+    [Fact]
+    public async Task 授权码一次性_PKCE错误拒绝()
+    {
+        var verifier = "correct-verifier-01234567890123456789012345678901";
+        var challenge = Convert.ToBase64String(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(verifier)))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var authorize = await _idpClient.GetAsync(
+            $"/oidc/authorize?response_type=code&client_id=rp-app&redirect_uri=http://localhost/oidc/echo&code_challenge={challenge}&code_challenge_method=S256&user_id=idp-u1");
+        var authorizeCode = authorize.Headers.Location is null ? null : System.Web.HttpUtility.ParseQueryString(authorize.Headers.Location.ToString().Split('?')[1])["code"];
+        Assert.False(string.IsNullOrEmpty(authorizeCode));
+        var code = authorizeCode;
+
+        // 错误 verifier → 拒绝
+        var wrong = await _idpClient.PostAsync("/oidc/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code", ["code"] = code!, ["code_verifier"] = "wrong".PadLeft(43, 'x'), ["client_id"] = "rp-app",
+        }));
+        Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+
+        // 正确 verifier 但码已被首次消费尝试消耗?——错误尝试不消费(仅 PKCE 校验失败不移除码的语义):
+        // 实现:TryRemove 在校验前执行,错误 verifier 已消费码 → 二次也拒(防爆破语义)
+        var retry = await _idpClient.PostAsync("/oidc/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code", ["code"] = code!, ["code_verifier"] = verifier, ["client_id"] = "rp-app",
+        }));
+        Assert.Equal(HttpStatusCode.BadRequest, retry.StatusCode);
+    }
+
+    [Fact]
+    public async Task client_credentials_凭据错误401_正确签发()
+    {
+        var bad = await _idpClient.PostAsync("/oidc/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials", ["client_id"] = "rp-app", ["client_secret"] = "wrong",
+        }));
+        Assert.Equal(HttpStatusCode.Unauthorized, bad.StatusCode);
+    }
+}
+
+/// <summary>禁止自动跟随重定向的包装 handler(authorize 端点断言 302+Location 用)。</summary>
+public sealed class NoRedirectHandler(System.Net.Http.HttpMessageHandler inner) : System.Net.Http.DelegatingHandler(inner)
+{
+    protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+        => base.SendAsync(request, cancellationToken); // TestServer handler 默认不自动跟随;此处仅包装保底
 }

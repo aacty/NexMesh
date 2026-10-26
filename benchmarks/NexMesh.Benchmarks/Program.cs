@@ -21,6 +21,7 @@ public static class Program
     public static void Main(string[] args)
     {
         var config = ManualConfig.Create(DefaultConfig.Instance)
+            .WithOptions(ConfigOptions.DisableOptimizationsValidator) // FreeSql 官方包无 Release 标记(第三方包常态,框架代码自身全部 Release)
             .AddJob(Job.ShortRun.WithIterationCount(20).WithWarmupCount(5))
             .AddColumn(StatisticColumn.Mean)
             .AddColumn(StatisticColumn.P95)
@@ -136,4 +137,72 @@ public class ContextSlotBenchmarks
             _ = _accessor.Current;
         }
     }
+}
+
+// ═══════════════ 基准 5:数据层 CRUD(FreeSql SQLite 内存)═══════════════
+
+/// <summary>仓储 CRUD 热路径:插入(雪花)/查询/软删过滤计数。</summary>
+[MemoryDiagnoser]
+public class DataCrudBenchmarks
+{
+    public sealed class BenchRow : NexMesh.Data.ISoftDelete
+    {
+        public long Id { get; set; }
+        public string Name { get; set; } = "";
+        public int Value { get; set; }
+        public bool IsDeleted { get; set; }
+    }
+
+    private readonly IFreeSql _fsql;
+
+    public DataCrudBenchmarks()
+    {
+        _fsql = new FreeSql.FreeSqlBuilder()
+            .UseConnectionString(FreeSql.DataType.Sqlite, "Data Source=bench-crud.db;Cache=Shared")
+            .UseAutoSyncStructure(true)
+            .Build();
+        _fsql.GlobalFilter.Apply<NexMesh.Data.ISoftDelete>("sd", e => !e.IsDeleted);
+        _fsql.Insert(Enumerable.Range(0, 100).Select(i => new BenchRow { Id = NexMesh.Data.NexMeshSnowflake.NextId(), Name = $"row{i}", Value = i }).ToList()).ExecuteAffrows();
+    }
+
+    [Benchmark]
+    public long 软删过滤计数()
+        => _fsql.Select<BenchRow>().Count();
+
+    [Benchmark]
+    public BenchRow 单行查询()
+        => _fsql.Select<BenchRow>().Where(r => r.Value == 50).First();
+
+    [Benchmark]
+    public long 插入单行()
+    {
+        var id = _fsql.Insert(new BenchRow { Id = NexMesh.Data.NexMeshSnowflake.NextId(), Name = "bench", Value = 999 }).ExecuteIdentity();
+        return id;
+    }
+}
+
+// ═══════════════ 基准 6:缓存命中(L1/L2)═══════════════
+
+/// <summary>双层缓存命中路径:未命中写→L1 命中→防击穿读。</summary>
+[MemoryDiagnoser]
+public class CacheBenchmarks
+{
+    private readonly NexMesh.Cache.NexMeshCacheSource _source = new(new NexMesh.Cache.CacheSourceOptions { KeyPrefix = "bench:" }, null);
+
+    public CacheBenchmarks()
+    {
+        _source.SetAsync("warm", "v").GetAwaiter().GetResult();
+    }
+
+    [Benchmark]
+    public async Task<string?> L1命中()
+        => await _source.GetAsync<string>("warm");
+
+    [Benchmark]
+    public async Task 未命中写入()
+        => await _source.SetAsync("miss" + Random.Shared.Next(1000), "v");
+
+    [Benchmark]
+    public async Task<string?> 防击穿读()
+        => await _source.GetOrCreateAsync("goc", TimeSpan.FromSeconds(30), _ => Task.FromResult<string?>("built"));
 }

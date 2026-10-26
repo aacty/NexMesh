@@ -438,3 +438,32 @@ public class MigrationLockTests
         Assert.Equal(1, results.Sum()); // 恰好一个实例应用(另一实例幂等跳过)
     }
 }
+
+/// <summary>SSS+ 审查补充:读路径与写路径互斥(ListApplied 不吐中间态)。</summary>
+public class ListAppliedConcurrencyTests
+{
+    [Fact]
+    public async Task ListApplied与RunPending并发_读路径过闸_不吐中间态且恰好一次()
+    {
+        using var host = new MigrationHost(s => s.AddNexMeshMigration<V1000_CreateOrders>());
+        // 并发:一面跑迁移,一面反复查记录——闸保证查询要么见 0 条(迁移前)要么 1 条(完成后),绝无中间态(半行/重复)
+        var querying = Task.Run(async () =>
+        {
+            var counts = new HashSet<int>();
+            for (var i = 0; i < 200; i++)
+            {
+                var applied = await host.Runner.ListAppliedAsync();
+                counts.Add(applied.Count);
+                await Task.Delay(2);
+            }
+            return counts;
+        });
+        var migrated = await host.Runner.RunPendingAsync();
+        var seen = await querying;
+
+        Assert.Equal(1, migrated);
+        // 只允许两种观察值:0(迁移前)或 1(迁移后)——不允许任何中间值
+        Assert.All(seen, c => Assert.True(c is 0 or 1, $"观察到中间态计数:{c}"));
+        Assert.Contains(1, seen); // 最终必然可见
+    }
+}

@@ -42,7 +42,9 @@ namespace NexMesh.Auth
     public interface ISessionStore
     {
         System.Threading.Tasks.Task<NexMesh.Auth.TokenSession?> GetAsync(string token);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Auth.SessionSummary>> ListActiveAsync(System.Threading.CancellationToken ct = default);
         System.Threading.Tasks.Task RevokeAsync(string token);
+        System.Threading.Tasks.Task<int> RevokeByUserAsync(string userId, System.Threading.CancellationToken ct = default);
         System.Threading.Tasks.Task SaveAsync(NexMesh.Auth.TokenSession session);
     }
     public interface ITokenStore
@@ -138,7 +140,9 @@ namespace NexMesh.Auth
     {
         public MemorySessionStore() { }
         public System.Threading.Tasks.Task<NexMesh.Auth.TokenSession?> GetAsync(string token) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Auth.SessionSummary>> ListActiveAsync(System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task RevokeAsync(string token) { }
+        public System.Threading.Tasks.Task<int> RevokeByUserAsync(string userId, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task SaveAsync(NexMesh.Auth.TokenSession session) { }
     }
     public sealed class MemoryTokenStore : NexMesh.Auth.ITokenStore
@@ -194,6 +198,10 @@ namespace NexMesh.Auth
                 "Renewed"})]
         public System.Threading.Tasks.Task<System.ValueTuple<NexMesh.Auth.TokenSession, bool>> TouchAsync(NexMesh.Auth.TokenSession session) { }
     }
+    public static class OidcJwksFetcher
+    {
+        public static System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string, System.Security.Cryptography.RSA>> FetchAsync(string issuer, System.Net.Http.HttpClient? http = null, System.Threading.CancellationToken ct = default) { }
+    }
     public sealed class OidcOptions
     {
         public OidcOptions() { }
@@ -207,6 +215,7 @@ namespace NexMesh.Auth
     {
         public OidcTokenValidator(Microsoft.Extensions.Options.IOptions<NexMesh.Auth.AuthenticationOptions> options) { }
         public bool Enabled { get; }
+        public void SetJwksKeys(System.Collections.Generic.IReadOnlyDictionary<string, System.Security.Cryptography.RSA>? keys) { }
         public NexMesh.Auth.LoginUser? Validate(string jwt) { }
     }
     public sealed class RedisAuthStore : NexMesh.Auth.IClaimsJournal, NexMesh.Auth.ISessionStore, NexMesh.Auth.ITokenStore
@@ -216,6 +225,7 @@ namespace NexMesh.Auth
         public System.Threading.Tasks.Task<NexMesh.Auth.TokenSession?> GetAsync(string token) { }
         public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<System.Security.Claims.Claim>?> GetClaimsAsync(string accessToken, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task<bool> HasRefreshAsync(string userId, string refreshToken, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Auth.SessionSummary>> ListActiveAsync(System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task RemoveAccessTokenAsync(string userId, string token, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task RemoveAllTokensAsync(string userId, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task RemoveAllUserAsync(string userId, System.Threading.CancellationToken ct = default) { }
@@ -223,6 +233,7 @@ namespace NexMesh.Auth
         public System.Threading.Tasks.Task RemoveRefreshAsync(string userId, string refreshToken, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task RemoveRefreshTokenAsync(string userId, string token, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task RevokeAsync(string token) { }
+        public System.Threading.Tasks.Task<int> RevokeByUserAsync(string userId, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task SaveAsync(NexMesh.Auth.TokenSession session) { }
         public System.Threading.Tasks.Task SetClaimsAsync(string accessToken, System.Collections.Generic.IReadOnlyList<System.Security.Claims.Claim> claims, System.TimeSpan lifetime, System.Threading.CancellationToken ct = default) { }
         public System.Threading.Tasks.Task StoreAccessTokenAsync(string userId, string token, System.TimeSpan lifetime, System.Threading.CancellationToken ct = default) { }
@@ -273,6 +284,17 @@ namespace NexMesh.Auth
     {
         public static NexMesh.Core.NexMeshBuilder AddSecurity(this NexMesh.Core.NexMeshBuilder builder, System.Action<NexMesh.Auth.SecurityBuilder> configure) { }
     }
+    public sealed class SessionSummary : System.IEquatable<NexMesh.Auth.SessionSummary>
+    {
+        public SessionSummary(string TokenPrefix, string UserId, string? UserName, string? TenantId, System.DateTime IssuedAt, System.DateTime LastActivityAt, System.DateTime ExpiresAt) { }
+        public System.DateTime ExpiresAt { get; init; }
+        public System.DateTime IssuedAt { get; init; }
+        public System.DateTime LastActivityAt { get; init; }
+        public string? TenantId { get; init; }
+        public string TokenPrefix { get; init; }
+        public string UserId { get; init; }
+        public string? UserName { get; init; }
+    }
     public sealed class TokenClaim : System.IEquatable<NexMesh.Auth.TokenClaim>
     {
         public TokenClaim(string Type, string Value) { }
@@ -290,6 +312,66 @@ namespace NexMesh.Auth
         public bool Revoked { get; init; }
         public string? TenantId { get; init; }
         public string Token { get; init; }
+        public string UserId { get; init; }
+        public string? UserName { get; init; }
+    }
+}
+namespace NexMesh.Auth.Oidc
+{
+    public interface IOidcClientStore
+    {
+        System.Threading.Tasks.Task<NexMesh.Auth.Oidc.OidcClient?> FindAsync(string clientId);
+    }
+    public interface IOidcUserStore
+    {
+        System.Threading.Tasks.Task<NexMesh.Auth.Oidc.OidcIdpUser?> FindAsync(string userId);
+    }
+    public sealed class InMemoryClientStore : NexMesh.Auth.Oidc.IOidcClientStore
+    {
+        public InMemoryClientStore() { }
+        public void Add(NexMesh.Auth.Oidc.OidcClient client) { }
+        public System.Threading.Tasks.Task<NexMesh.Auth.Oidc.OidcClient?> FindAsync(string clientId) { }
+    }
+    public sealed class InMemoryUserStore : NexMesh.Auth.Oidc.IOidcUserStore
+    {
+        public InMemoryUserStore() { }
+        public void Add(NexMesh.Auth.Oidc.OidcIdpUser user) { }
+        public System.Threading.Tasks.Task<NexMesh.Auth.Oidc.OidcIdpUser?> FindAsync(string userId) { }
+    }
+    public static class NexMeshOidcIdpExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshOidcIdp(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Action<NexMesh.Auth.Oidc.OidcIdpOptions> configure) { }
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshOidcIdp(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints, string prefix = "/oidc") { }
+    }
+    public sealed class OidcClient : System.IEquatable<NexMesh.Auth.Oidc.OidcClient>
+    {
+        public OidcClient() { }
+        public string ClientId { get; init; }
+        public string? ClientSecret { get; init; }
+        public System.Collections.Generic.IReadOnlyList<string> RedirectUris { get; init; }
+    }
+    public sealed class OidcIdpOptions
+    {
+        public OidcIdpOptions() { }
+        public NexMesh.Auth.Oidc.IOidcClientStore? ClientStore { get; set; }
+        public string Issuer { get; set; }
+        public NexMesh.Auth.Oidc.IOidcUserStore? UserStore { get; set; }
+    }
+    public sealed class OidcIdpTokenService
+    {
+        public OidcIdpTokenService(NexMesh.Auth.Oidc.OidcIdpOptions options) { }
+        public object ExportPublicJwk() { }
+        public string IssueAuthorizationCode(string clientId, string redirectUri, string challenge, string userId) { }
+        public string IssueClientCredentials(string clientId) { }
+        public string IssueUserToken(NexMesh.Auth.Oidc.OidcIdpUser user, string clientId) { }
+        public string? RedeemAuthorizationCode(string code, string verifier, string clientId) { }
+        public void RotateKey() { }
+    }
+    public sealed class OidcIdpUser : System.IEquatable<NexMesh.Auth.Oidc.OidcIdpUser>
+    {
+        public OidcIdpUser(string UserId, string? UserName = null, string? TenantId = null, System.Collections.Generic.IReadOnlyList<string>? Roles = null) { }
+        public System.Collections.Generic.IReadOnlyList<string>? Roles { get; init; }
+        public string? TenantId { get; init; }
         public string UserId { get; init; }
         public string? UserName { get; init; }
     }

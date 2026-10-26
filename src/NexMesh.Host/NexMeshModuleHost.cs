@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NexMesh.Auth;
 using NexMesh.Core;
 using NexMesh.Core.Context;
@@ -30,6 +31,7 @@ public static class NexMeshModuleHostExtensions
         builder.Configuration.GetSection("NexMesh").Bind(mb.Options);
 
         builder.Services.AddNexMesh(builder.Configuration);
+        builder.Services.TryAddSingleton<Dashboard.DashboardStartupClock>(); // Dashboard 运行时长时钟
         var scanned = ModuleHostAssemblyScanner.Closure(assemblies ?? [Assembly.GetEntryAssembly()!]);
         var hostSet = new HostAssemblySet(scanned);
         builder.Services.AddSingleton(hostSet);

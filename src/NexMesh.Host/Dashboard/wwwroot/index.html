@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NexMesh Dashboard</title>
+<style>
+:root{--bg:#0f1117;--card:#161a23;--card2:#1c212d;--bd:#262c3a;--tx:#e6e9f0;--sub:#8b93a7;--acc:#4f8cff;--ok:#34c77b;--warn:#f5a623;--err:#f0644c}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--bd);background:var(--card)}
+header .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#4f8cff,#7b5cff);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+header b{font-size:16px}
+header .tag{font-size:12px;color:var(--sub);border:1px solid var(--bd);border-radius:12px;padding:1px 10px}
+header .spacer{flex:1}
+header button{background:var(--card2);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px}
+main{max-width:1180px;margin:24px auto;padding:0 24px}
+/* 登录 */
+#login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:28px}
+#login h2{font-size:16px;margin-bottom:6px}
+#login p{color:var(--sub);font-size:13px;margin-bottom:18px}
+#login input{width:100%;background:var(--card2);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:14px}
+#login .btn{width:100%;background:var(--acc);border:none;color:#fff;border-radius:8px;padding:10px;font-size:14px;cursor:pointer}
+#loginErr{color:var(--err);font-size:13px;min-height:18px}
+/* 标签 */
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--bd);margin-bottom:18px;flex-wrap:wrap}
+.tabs button{background:none;border:none;color:var(--sub);padding:10px 16px;cursor:pointer;font-size:14px;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--tx);border-bottom-color:var(--acc)}
+/* 卡片 */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.stat .n{font-size:26px;font-weight:700}
+.stat .l{color:var(--sub);font-size:13px}
+.panel{display:none}.panel.on{display:block}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--bd);font-size:13px}
+th{color:var(--sub);font-weight:500;background:var(--card2)}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;padding:1px 10px;border-radius:10px;font-size:12px}
+.badge.high{color:var(--err);background:rgba(240,100,76,.12)}
+.badge.low{color:var(--ok);background:rgba(52,199,123,.12)}
+.badge.off{color:var(--sub);background:var(--card2)}
+h3{font-size:15px;margin:18px 0 10px}
+.empty{color:var(--sub);text-align:center;padding:40px 0}
+/* 审批 */
+.appr-item{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
+.appr-item .grow{flex:1}
+.appr-item .t{font-weight:600}
+.appr-item .d{color:var(--sub);font-size:13px}
+.appr-item button{border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px}
+.appr-item .yes{background:var(--ok);color:#04150c}
+.appr-item .no{background:transparent;color:var(--err);border:1px solid var(--err)}
+/* 抽屉 */
+#drawer{position:fixed;top:0;right:-460px;width:440px;height:100%;background:var(--card);border-left:1px solid var(--bd);transition:right .2s;padding:20px;overflow-y:auto;z-index:30}
+#drawer.open{right:0}
+#drawer h4{margin-bottom:4px}
+#drawer .kv{color:var(--sub);font-size:12px;margin:12px 0 4px}
+#drawer pre{background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:12px;font:12px/1.6 Consolas,monospace;overflow:auto;color:#9fe3b8;white-space:pre-wrap;word-break:break-all}
+#drawer .acts{display:flex;gap:10px;margin-top:18px}
+#drawer .acts button{flex:1;padding:10px;border:none;border-radius:8px;cursor:pointer;font-size:14px}
+#drawer .acts .yes{background:var(--ok);color:#04150c}
+#drawer .acts .no{background:transparent;color:var(--err);border:1px solid var(--err)}
+#drawer .result{margin-top:14px;padding:12px;border-radius:8px;background:var(--card2);font-size:13px;display:none}
+#mask{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:20}
+.note{color:var(--sub);font-size:13px;margin:10px 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">N</div><b>NexMesh Dashboard</b>
+  <span class="tag" id="hEnv"></span><span class="tag" id="hVer"></span>
+  <div class="spacer"></div>
+  <button id="btnLogout" style="display:none">退出</button>
+</header>
+
+<div id="login">
+  <h2>登录管理台</h2>
+  <p>使用系统账号登录后查看框架运行状态</p>
+  <input id="inUser" placeholder="账号" autocomplete="username">
+  <input id="inPass" type="password" placeholder="密码" autocomplete="current-password">
+  <div id="loginErr"></div>
+  <button class="btn" id="btnLogin">登 录</button>
+</div>
+
+<main id="main" style="display:none">
+  <div class="tabs" id="tabs"></div>
+  <div id="panels"></div>
+</main>
+
+<div id="mask" onclick="closeDrawer()"></div>
+<div id="drawer"></div>
+
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+const TOKEN_KEY='nexmesh.dashboard.token';
+let DATA=null, TAB='overview';
+
+/* ---------- 请求封装 ---------- */
+async function api(path,opts={}){
+  const headers={...(opts.headers||{})};
+  const token=sessionStorage.getItem(TOKEN_KEY);
+  if(token)headers.Authorization='Bearer '+token;
+  if(opts.body)headers['Content-Type']='application/json';
+  const res=await fetch(path,{...opts,headers});
+  const body=await res.json().catch(()=>null);
+  if(res.status===401){showLogin();throw new Error('unauthorized');}
+  if(!body||body.success===false)throw new Error(body&&body.message||('HTTP '+res.status));
+  return body.data;
+}
+
+/* ---------- 登录态 ---------- */
+function showLogin(){$('#login').style.display='block';$('#main').style.display='none';$('#btnLogout').style.display='none';sessionStorage.removeItem(TOKEN_KEY);}
+async function tryResume(){
+  if(!sessionStorage.getItem(TOKEN_KEY))return false;
+  try{await api('/nexmesh/auth/me');return true;}catch(e){return false;}
+}
+async function doLogin(){
+  const username=$('#inUser').value.trim(),password=$('#inPass').value;
+  $('#loginErr').textContent='';
+  try{
+    const res=await fetch('/nexmesh/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const body=await res.json();
+    if(!body.success){$('#loginErr').textContent=body.message||'登录失败';return;}
+    sessionStorage.setItem(TOKEN_KEY,body.data.accessToken);
+    await enter();
+  }catch(e){$('#loginErr').textContent='网络错误';}
+}
+async function enter(){
+  DATA=await api('/nexmesh/dashboard/overview');
+  $('#login').style.display='none';$('#main').style.display='block';
+  $('#btnLogout').style.display='';
+  const ov=DATA.overview||{};
+  $('#hEnv').textContent=ov.environment||'-';
+  $('#hVer').textContent='v'+(ov.frameworkVersion||'-');
+  renderTabs();renderPanels();
+}
+
+/* ---------- 标签(按已启用面板动态渲染) ---------- */
+const PANEL_TITLES={overview:'概览',ai:'AI',approvals:'审批中心',jobs:'后台作业',events:'事件总线',migrations:'数据库迁移',cache:'缓存',sessions:'会话'};
+function renderTabs(){
+  const tabs=$('#tabs');tabs.innerHTML='';
+  for(const id of Object.keys(DATA)){
+    const p=DATA[id];if(!p||p.enabled===false&&id!=='overview'&&!(id==='jobs'&&p.jobs&&p.jobs.length))continue;
+    if(id!=='overview'&&p&&p.enabled===false)continue;
+    const b=document.createElement('button');
+    b.textContent=PANEL_TITLES[id]||id;
+    b.className=id===TAB?'on':'';
+    b.onclick=()=>{TAB=id;renderTabs();renderPanels();};
+    tabs.appendChild(b);
+  }
+}
+
+/* ---------- 面板渲染 ---------- */
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function renderPanels(){
+  const root=$('#panels');root.innerHTML='';
+  if(TAB==='overview')root.appendChild(buildOverview());
+  else if(TAB==='ai')root.appendChild(buildAi());
+  else if(TAB==='approvals')buildApprovals(root);
+  else if(TAB==='jobs')root.appendChild(buildJobs());
+  else if(TAB==='events')root.appendChild(buildEvents());
+  else if(TAB==='migrations')root.appendChild(buildMigrations());
+  else if(TAB==='cache')root.appendChild(buildCache());
+  else if(TAB==='sessions')root.appendChild(buildSessions());
+  else root.innerHTML='<div class="empty">未知面板</div>';
+}
+function card(n,l){return `<div class="stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`;}
+function buildOverview(){
+  const o=DATA.overview||{};
+  const div=document.createElement('div');
+  let html='<div class="grid">'+
+    card(fmtDur(o.uptimeSeconds),'运行时长')+card(o.endpointCount??'-','端点数')+
+    card((o.modules||[]).length,'模块数')+'</div>';
+  if((o.modules||[]).length)html+=`<h3>模块清单</h3><table><tr><th>模块</th></tr>${o.modules.map(m=>`<tr><td>${esc(m)}</td></tr>`).join('')}</table>`;
+  div.innerHTML=html;return div;
+}
+function fmtDur(s){s=s||0;const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`${d}天${h}时`:(h?`${h}时${m}分`:`${m}分${s%60|0}秒`);}
+function buildAi(){
+  const a=DATA.ai||{};const div=document.createElement('div');
+  let html=`<div class="grid">${card((a.providers||[]).length,'Provider')}${card((a.tools||[]).length,'AI 工具')}<div class="stat"><div class="n" style="font-size:16px">${esc(a.defaultProvider||'-')}</div><div class="l">默认 Provider</div></div></div>`;
+  if((a.providers||[]).length)html+='<h3>Provider</h3><table><tr><th>名称</th><th>类型</th><th>模型</th></tr>'+
+    a.providers.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.type)}</td><td>${esc(p.model)}</td></tr>`).join('')+'</table>';
+  if((a.tools||[]).length)html+='<h3>工具清单</h3><table><tr><th>名称</th><th>说明</th><th>风险</th></tr>'+
+    a.tools.map(t=>`<tr><td>${esc(t.name)}</td><td>${esc(t.description)}</td><td><span class="badge ${String(t.risk).toLowerCase()==='high'?'high':'low'}">${esc(t.risk)}</span></td></tr>`).join('')+'</table>';
+  div.innerHTML=html;return div;
+}
+function buildJobs(){
+  const j=DATA.jobs||{};const div=document.createElement('div');
+  if(!(j.jobs||[]).length){div.innerHTML='<div class="empty">无后台作业</div>';return div;}
+  div.innerHTML='<table><tr><th>作业</th><th>类型</th><th>类别</th><th>最近执行</th><th style="width:110px"></th></tr>'+
+    j.jobs.map(x=>`<tr id="jobrow-${esc(x.jobName)}"><td>${esc(x.jobName)}</td><td>${esc(x.type)}</td><td><span class="badge low">${esc(x.kind)}</span></td>`+
+    `<td>${(x.runs&&x.runs.length)?(fmtDurShort(x.runs[0].durationMs)+' '+(x.runs[0].ok?'<span class="badge low">成功</span>':'<span class="badge high">失败</span>')+' <span class="kv">('+esc(x.runs[0].trigger)+')</span>'):'<span class="kv">—</span>'}</td>`+
+    `<td><button style="cursor:pointer;background:var(--acc);color:#fff;border:none;border-radius:8px;padding:4px 10px" onclick="triggerJob('''+esc(x.jobName)+''')">立即执行</button></td></tr>`).join('')+'</table>';
+  const first=(j.jobs||[]).find(x=>x.runs&&x.runs.length);
+  if(first){div.innerHTML+='<h3>最近执行记录('+esc(first.jobName)+')</h3><table><tr><th>开始时间</th><th>耗时</th><th>结果</th><th>来源</th></tr>'+
+    first.runs.slice(0,10).map(r=>`<tr><td>${esc(r.startedAt)}</td><td>${esc(r.durationMs)}ms</td><td>${r.ok?'<span class="badge low">成功</span>':'<span class="badge high">失败</span>'+(r.error?' '+esc(r.error):'')}</td><td>${esc(r.trigger)}</td><td>${esc(r.triggeredBy||'-')}</td></tr>`).join('')+'</table>';}
+  return div;
+}
+function fmtDurShort(ms){ms=ms||0;return ms<1000?ms+'ms':(ms/1000).toFixed(1)+'s';}
+async function refreshData(){
+  try{
+    DATA=await api('/nexmesh/dashboard/overview');
+    renderTabs();renderPanels();
+  }catch(e){}
+}
+function toast(msg){
+  let t=document.getElementById('toast');
+  if(!t){t=document.createElement('div');t.id='toast';t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--acc);color:#fff;padding:10px 22px;border-radius:10px;z-index:99;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.4)';document.body.appendChild(t);}
+  t.textContent=msg;t.style.display='block';
+  clearTimeout(t._tm);t._tm=setTimeout(()=>t.style.display='none',2200);
+}
+async function triggerJob(name){
+  try{
+    const r=await api('/nexmesh/dashboard/jobs/'+encodeURIComponent(name)+'/trigger',{method:'POST'});
+    toast(r.triggered?'执行完成,记录已更新':'作业正在执行中,请稍后再试');
+    setTimeout(refreshData,400);
+  }catch(e){toast('操作失败:'+e.message);}
+}
+function buildEvents(){
+  const e=DATA.events||{};const div=document.createElement('div');
+  div.innerHTML='<div class="grid">'+card(e.capacity,'队列容量')+card(e.concurrency,'消费并行度')+card(e.drainTimeoutSeconds+'s','停机排干超时')+card(e.queueDepth,'当前队列深度')+'</div>';
+  return div;
+}
+function buildMigrations(){
+  const m=DATA.migrations||{};const div=document.createElement('div');
+  if(!m.enabled){div.innerHTML='<div class="empty">未启用迁移(AddNexMeshMigrations)</div>';return div;}
+  const list=m.migrations||[];
+  let html='<div class="grid">'+card(m.count,'已应用迁移')+card(m.pendingCount||0,'待应用')+'</div>';
+  if((m.pending||[]).length){html+='<p class="note">待应用: '+(m.pending.map(x=>esc(x.source)+'#'+esc(x.version)+' '+esc(x.name)).join('、'))+
+    ' <button style="cursor:pointer;background:var(--acc);color:#fff;border:none;border-radius:8px;padding:4px 12px" onclick="runMigrations()">在线执行</button>(走与部署完全相同的锁与事务)</p>';}
+  html+=
+    (list.length?'<table><tr><th>源</th><th>版本</th><th>名称</th><th>应用时间</th><th>耗时</th></tr>'+
+    list.map(x=>'<tr><td>'+esc(x.source)+'</td><td>'+esc(x.version)+'</td><td>'+esc(x.name)+'</td><td>'+esc(x.appliedAt)+'</td><td>'+esc(x.durationMs)+'ms</td></tr>').join('')+'</table>'
+    :'<div class="empty">暂无已应用迁移</div>');
+  return div;
+}
+function buildCache(){
+  const c=DATA.cache||{};const div=document.createElement('div');
+  if(!c.enabled){div.innerHTML='<div class="empty">未启用缓存(AddNexMeshCache)</div>';return div;}
+  const src=c.sources||[];
+  div.innerHTML='<div class="grid"><div class="stat"><div class="n" style="font-size:16px">'+esc(c.mode)+'</div><div class="l">模式</div></div>'+card(src.length,'缓存源')+'</div>'+
+    '<table><tr><th>名称</th><th>键前缀</th><th>默认TTL</th><th>L1 TTL</th><th></th></tr>'+
+    src.map(s=>'<tr><td>'+esc(s.name)+'</td><td>'+esc(s.keyPrefix)+'</td><td>'+esc(s.defaultTtlSeconds)+'s</td><td>'+esc(s.l1TtlSeconds)+'s</td>'+
+    '<td><button style="cursor:pointer;background:transparent;color:var(--acc);border:1px solid var(--acc);border-radius:8px;padding:3px 10px" onclick="inspectCache(''+esc(s.name)+'',''+esc(s.keyPrefix)+'')">巡视键</button></td></tr>').join('')+'</table>'+
+    '<div id="cacheKeys"></div>';
+  return div;
+}
+async function inspectCache(source,keyPrefix){
+  const box=document.getElementById('cacheKeys');
+  box.innerHTML='<p class="note">加载中…</p>';
+  try{
+    const keys=await api('/nexmesh/dashboard/cache/'+encodeURIComponent(source)+'/keys?prefix='+encodeURIComponent(keyPrefix));
+    if(!keys||!keys.length){box.innerHTML='<p class="note">无匹配键(内存模式不支持键巡视)</p>';return;}
+    box.innerHTML='<h3>键巡视('+esc(source)+':'+esc(keyPrefix)+'*,共 '+keys.length+')</h3>'+
+      '<table><tr><th>键</th><th>TTL</th><th style="width:70px"></th></tr>'+
+      keys.map(k=>'<tr><td><code>'+esc(k.key)+'</code></td><td>'+(k.ttlSeconds==null?'永不过期':esc(k.ttlSeconds)+'s')+'</td>'+
+      '<td><button style="cursor:pointer;background:transparent;color:var(--err);border:1px solid var(--err);border-radius:6px;padding:2px 8px" onclick="delCacheKey(''+esc(source)+'',''+encodeURIComponent(String(k.key)).replace(/'/g,'%27')+'')">删</button></td></tr>').join('')+'</table>';
+  }catch(e){box.innerHTML='<p class="note">巡视失败:'+esc(e.message)+'</p>';}
+}
+async function delCacheKey(source,key){
+  if(!confirm('删除缓存键?'))return;
+  try{await api('/nexmesh/dashboard/cache/'+encodeURIComponent(source)+'/keys/'+key,{method:'DELETE'});toast('已删除');inspectCache(source,'');}catch(e){toast('删除失败');}
+}
+async function runMigrations(){
+  if(!confirm('执行待应用迁移?(单迁移单事务,失败将中止)'))return;
+  try{
+    const r=await api('/nexmesh/dashboard/migrations/run',{method:'POST'});
+    toast('已应用 '+r.applied+' 条迁移');
+    setTimeout(refreshData,400);
+  }catch(e){toast('迁移失败:'+e.message);}
+}
+async function kickUser(userId){
+  if(!confirm('吊销该用户全部会话(立即登出)?'))return;
+  try{
+    const r=await api('/nexmesh/dashboard/sessions/'+encodeURIComponent(userId)+'/revoke',{method:'POST'});
+    toast('已吊销 '+r.revoked+' 个会话');
+    setTimeout(refreshData,400);
+  }catch(e){toast('操作失败:'+e.message);}
+}
+function buildSessions(){
+  const s=DATA.sessions||{};const div=document.createElement('div');
+  if(!s.enabled){div.innerHTML='<div class="empty">未启用认证会话</div>';return div;}
+  const list=s.sessions||[];
+  div.innerHTML='<div class="grid">'+card(s.count,'活跃会话')+'</div>'+
+    (list.length?'<table><tr><th>Token</th><th>用户</th><th>租户</th><th>最近活动</th><th>过期</th></tr>'+
+    list.map(x=>'<tr><td><code>'+esc(x.tokenPrefix)+'</code></td><td>'+esc(x.userName||x.userId)+'</td><td>'+esc(x.tenantId||'-')+'</td><td>'+esc(x.lastActivityAt)+'</td><td>'+esc(x.expiresAt)+'</td><td style="width:90px"><button style="cursor:pointer;background:transparent;color:var(--err);border:1px solid var(--err);border-radius:8px;padding:3px 10px" onclick="kickUser('+JSON.stringify(String(x.userId)).replace(/"/g,"&quot;")+')">踢下线</button></td></tr>').join('')+'</table><p class="note">Token 已打码;踢下线=吊销该用户全部会话</p>'
+    :'<div class="empty">无活跃会话</div>');
+  return div;
+}
+
+/* ---------- 审批中心 ---------- */
+async function buildApprovals(root){
+  root.innerHTML='<div class="empty">加载中…</div>';
+  let d;try{d=await api('/nexmesh/dashboard/approvals');}catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'</div>';return;}
+  if(d.enabled===false){root.innerHTML='<div class="empty">审批门未启用(AddNexMeshApproval)</div>';return;}
+  root.innerHTML='';
+  const list=d.pending||[];
+  if(!list.length){root.innerHTML='<div class="empty">暂无待审项</div>';return;}
+  for(const p of list){
+    const item=document.createElement('div');item.className='appr-item';
+    item.innerHTML=`<div class="grow"><div class="t">${esc(p.toolName)}</div><div class="d">${esc(p.description)}</div><div class="d">${esc(p.createdAt)}</div></div>`;
+    const yes=document.createElement('button');yes.className='yes';yes.textContent='批准';
+    const no=document.createElement('button');no.className='no';no.textContent='拒绝';
+    yes.onclick=()=>decide(p.id,true);no.onclick=()=>decide(p.id,false);
+    item.appendChild(yes);item.appendChild(no);root.appendChild(item);
+  }
+}
+async function decide(id,approve){
+  const drawer=$('#drawer');
+  drawer.innerHTML='<h4>'+(approve?'批准执行':'拒绝')+'</h4><p class="note">操作中…</p>';
+  try{
+    const r=await api(`/nexmesh/dashboard/approvals/${id}/${approve?'approve':'reject'}`,{method:'POST'});
+    drawer.innerHTML=`<h4>操作完成</h4>
+      <div class="kv">工具</div>${esc(r.toolName)}
+      <div class="kv">状态</div><span class="badge ${r.status==='Executed'?'low':'off'}">${esc(r.status)}</span>
+      ${r.result?'<div class="kv">执行结果</div><pre>'+esc(r.result)+'</pre>':''}
+      ${r.error?'<div class="kv">错误</div><pre>'+esc(r.error)+'</pre>':''}
+      <p class="note">窗口即将关闭…</p>`;
+    setTimeout(()=>{closeDrawer();renderPanels();},1600);
+  }catch(e){
+    drawer.innerHTML='<h4>失败</h4><p class="note">'+esc(e.message)+'</p>';
+  }
+}
+function closeDrawer(){$('#drawer').classList.remove('open');$('#mask').style.display='none';}
+
+/* ---------- 启动 ---------- */
+$('#btnLogin').onclick=doLogin;
+$('#inPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+$('#btnLogout').onclick=async()=>{try{await api('/nexmesh/auth/logout',{method:'POST'});}catch(e){}showLogin();};
+(async()=>{ if(await tryResume())enter(); })();
+</script>
+</body>
+</html>

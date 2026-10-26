@@ -5,6 +5,7 @@ using FreeSql;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NexMesh.AI;
 using NexMesh.Core;
 using NexMesh.Core.AutoApi;
@@ -35,6 +36,7 @@ public static class NexMeshHostExtensions
 
         // Core 总装 + 约定注入 + 契约实现注册
         builder.Services.AddNexMesh(configuration);
+        builder.Services.TryAddSingleton<Dashboard.DashboardStartupClock>(); // Dashboard 运行时长时钟(总装自动注册,MapNexMeshDashboard 可选消费)
         builder.Services.AddNexMeshConventionServices(assemblies);
         builder.Services.AddNexMeshContracts(assemblies);
 

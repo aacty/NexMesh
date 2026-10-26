@@ -22,6 +22,7 @@
     <Project Path="benchmarks/NexMesh.LoadTests/NexMesh.LoadTests.csproj" />
     <Project Path="benchmarks/NexMesh.GrpcLoadTests/NexMesh.GrpcLoadTests.csproj" />
     <Project Path="benchmarks/NexMesh.ConcurrencyAudit/NexMesh.ConcurrencyAudit.csproj" />
+    <Project Path="benchmarks/NexMesh.DashboardWarTests/NexMesh.DashboardWarTests.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NexMesh.Core.Tests/NexMesh.Core.Tests.csproj" />
@@ -40,5 +41,6 @@
     <Project Path="tests/NexMesh.Events.Tests/NexMesh.Events.Tests.csproj" />
     <Project Path="tests/NexMesh.ArchTests/NexMesh.ArchTests.csproj" />
     <Project Path="tests/NexMesh.Data.Migrations.Tests/NexMesh.Data.Migrations.Tests.csproj" />
+    <Project Path="tests/NexMesh.Dashboard.Tests/NexMesh.Dashboard.Tests.csproj" />
   </Folder>
 </Solution>

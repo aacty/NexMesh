@@ -217,3 +217,40 @@ public class CacheSourceBaseTests
         Assert.False(source.Exists("k1"));
     }
 }
+
+/// <summary>键巡视(ICacheInspection):SCAN 列键/TTL、删除、内存模式降级。</summary>
+public class CacheInspectionTests
+{
+    private static string? ConnectionString => Environment.GetEnvironmentVariable("NEXMESH_TEST_REDIS");
+
+    [Fact]
+    public async Task 内存模式_列键返回空集_删除返回真()
+    {
+        var source = new NexMeshCacheSource(new CacheSourceOptions { KeyPrefix = "inspect:" }, null);
+        await source.SetAsync("k1", "v1", TimeSpan.FromSeconds(30));
+        var keys = await source.ListKeysAsync("");
+        Assert.Empty(keys); // 内存模式不支持枚举:诚实空集
+        Assert.True(await source.RemoveKeyAsync("k1"));
+    }
+
+    [Fact]
+    public async Task Redis模式_按前缀列键带TTL_删除生效()
+    {
+        if (ConnectionString is null) return;
+        using var mux = StackExchange.Redis.ConnectionMultiplexer.Connect(ConnectionString);
+        var source = new NexMeshCacheSource(
+            new CacheSourceOptions { KeyPrefix = $"insp:{Guid.NewGuid():N}:", DefaultTtlSeconds = 60 }, mux);
+        await source.SetAsync("a:1", "v", TimeSpan.FromSeconds(60));
+        await source.SetAsync("a:2", "v", TimeSpan.FromSeconds(120));
+        await source.SetAsync("b:1", "v", TimeSpan.FromSeconds(60));
+
+        var keys = await source.ListKeysAsync("a:");
+        Assert.Equal(2, keys.Count);
+        Assert.All(keys, k => Assert.True(k.TtlSeconds is > 0 and <= 120));
+
+        Assert.True(await source.RemoveKeyAsync("a:1"));
+        var after = await source.ListKeysAsync("a:");
+        Assert.Single(after);
+        Assert.Equal("a:2", after[0].Key); // 键已去前缀展示
+    }
+}

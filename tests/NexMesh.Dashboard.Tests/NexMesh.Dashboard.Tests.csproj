@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NexMesh.Host\NexMesh.Host.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Worker\NexMesh.Worker.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Data.Migrations\NexMesh.Data.Migrations.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI\NexMesh.AI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FreeSql.Provider.Sqlite" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+</Project>

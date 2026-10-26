@@ -63,6 +63,95 @@ public sealed class RedisAuthStore(
         await Db.KeyDeleteAsync(ClaimsKey(token));
     }
 
+    public async Task<List<SessionSummary>> ListActiveAsync(CancellationToken ct = default)
+    {
+        // 经 IServer SCAN 增量遍历会话键,COUNT 批次 + 上限 1000 条(大库不拖垮);失效会话过滤
+        var result = new List<SessionSummary>();
+        const int limit = 1000;
+        var pattern = $"{keyPrefix}session:*";
+        foreach (var endpoint in redis.GetEndPoints())
+        {
+            var server = redis.GetServer(endpoint);
+            if (server.IsReplica)
+            {
+                continue; // 只扫主节点
+            }
+            await foreach (var key in server.KeysAsync(database: Db.Database, pattern: pattern, pageSize: 200))
+            {
+                if (ct.IsCancellationRequested || result.Count >= limit)
+                {
+                    break;
+                }
+                var value = await Db.StringGetAsync(key);
+                if (value.IsNullOrEmpty)
+                {
+                    continue;
+                }
+                try
+                {
+                    var session = JsonSerializer.Deserialize<TokenSession>(value.ToString(), Json);
+                    if (session is not null && !session.Revoked && session.ExpiresAt > DateTime.Now)
+                    {
+                        var token = key.ToString()[(keyPrefix.Length + "session:".Length)..];
+                        result.Add(new SessionSummary(
+                            token.Length > 8 ? token[..8] + "…" : token,
+                            session.UserId, session.UserName, session.TenantId,
+                            session.IssuedAt, session.LastActivityAt, session.ExpiresAt));
+                    }
+                }
+                catch (JsonException)
+                {
+                    // 非 JSON 值跳过(键空间被外部污染时不炸)
+                }
+            }
+            break; // 单主节点足够(多主分片场景取其一,面板展示语义)
+        }
+        return result.OrderByDescending(s => s.LastActivityAt).ToList();
+    }
+
+    public async Task<int> RevokeByUserAsync(string userId, CancellationToken ct = default)
+    {
+        // 按 userId 的会话索引键逐一取回 token 吊销(user-tokens:{userId} 列表由 SaveAsync 维护与否取决于实现;
+        // 简单且正确的做法:SCAN 会话键过滤 UserId 再删——与 ListActiveAsync 同通道,限 1000)
+        var revoked = 0;
+        var pattern = $"{keyPrefix}session:*";
+        foreach (var endpoint in redis.GetEndPoints())
+        {
+            var server = redis.GetServer(endpoint);
+            if (server.IsReplica)
+            {
+                continue;
+            }
+            await foreach (var key in server.KeysAsync(database: Db.Database, pattern: pattern, pageSize: 200))
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                var value = await Db.StringGetAsync(key);
+                if (value.IsNullOrEmpty)
+                {
+                    continue;
+                }
+                try
+                {
+                    var session = JsonSerializer.Deserialize<TokenSession>(value.ToString(), Json);
+                    if (session is { UserId: var uid } && uid == userId && !session.Revoked)
+                    {
+                        await Db.KeyDeleteAsync(key);
+                        revoked++;
+                    }
+                }
+                catch (JsonException)
+                {
+                    // 跳过外部污染值
+                }
+            }
+            break;
+        }
+        return revoked;
+    }
+
     // ── IClaimsJournal ─────────────────────────────────────────────
 
     public async Task SetClaimsAsync(string accessToken, IReadOnlyList<Claim> claims, TimeSpan lifetime, CancellationToken ct = default)

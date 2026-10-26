@@ -26,6 +26,7 @@ public static class NexMeshGrpcExtensions
         params System.Reflection.Assembly[] assemblies)
     {
         services.AddGrpc();
+        services.AddGrpcReflection(); // 客户端动态发现(GrpcReflectionService)
         services.AddSingleton(new ContractGrpcRegistry(
             assemblies.Length > 0 ? assemblies : [System.Reflection.Assembly.GetEntryAssembly()!]));
         return services;
@@ -35,6 +36,7 @@ public static class NexMeshGrpcExtensions
     public static IEndpointRouteBuilder MapNexMeshGrpc(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGrpcService<ContractGatewayService>();
+        endpoints.MapGrpcReflectionService(); // gRPC Reflection:客户端可动态发现服务/方法
         return endpoints;
     }
 

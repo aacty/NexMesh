@@ -3,6 +3,7 @@ namespace NexMesh.ArchTests;
 using System.Reflection;
 using PublicApiGenerator;
 using Xunit;
+using NexMesh.Host;
 
 /// <summary>
 /// 架构铁律测试:依赖规则从 csproj 注释/文档变成红绿测试——违反时构建直接红。
@@ -102,6 +103,7 @@ public class PublicApiBaselineTests
     [InlineData(typeof(NexMesh.Core.AutoApi.AutoApiEndpoint), "NexMesh.Core.txt")]
     [InlineData(typeof(NexMesh.Auth.LoginRateLimiter), "NexMesh.Auth.txt")]
     [InlineData(typeof(NexMesh.Data.Migrations.NexMeshMigration), "NexMesh.Data.Migrations.txt")]
+    [InlineData(typeof(NexMeshHostExtensions), "NexMesh.Host.txt")]
     public void 公共API面_与基线一致(System.Type markerType, string baselineFile)
     {
         var publicApi = markerType.Assembly.GeneratePublicApi(new ApiGeneratorOptions

@@ -112,6 +112,8 @@ public static class NexMeshCacheServiceCollectionExtensions
                 ? source
                 : throw new InvalidOperationException($"缓存源 '{name}' 未注册(NexMesh:Cache:Sources)");
 
+        public IReadOnlyList<string> SourceNames => sources.Keys.ToList();
+
         /// <summary>SSS+第二轮修复:容器停机时释放全部缓存源(MemoryCache + Redis Multiplexer)。</summary>
         public void Dispose()
         {

@@ -46,6 +46,57 @@ public abstract class NexMeshCronJob : BackgroundService
     /// <summary>单轮业务逻辑:依赖一律从注入的 sp(全新作用域)解析,严禁闭包捕获 Scoped。</summary>
     protected abstract Task RunOnceAsync(IServiceProvider scoped, CancellationToken ct);
 
+    /// <summary>执行闸:同一作业的调度轮与手动触发互斥(忙碌时手动触发立即返回 false,不排队)。</summary>
+    private readonly SemaphoreSlim _runGate = new(1, 1);
+
+    /// <summary>最近执行记录(环形 10 条,内存态;运维速览定位,审计走日志)。</summary>
+    private readonly Queue<JobRunRecord> _recentRuns = new();
+    private readonly object _runsLock = new();
+
+    /// <summary>最近执行记录(新→旧,最多 10 条;Dashboard 展示)。</summary>
+    public IReadOnlyList<JobRunRecord> RecentRuns
+    {
+        get { lock (_runsLock) { return _recentRuns.ToList(); } }
+    }
+
+    private void RecordRun(JobRunRecord record)
+    {
+        lock (_runsLock)
+        {
+            _recentRuns.Enqueue(record);
+            while (_recentRuns.Count > 10)
+            {
+                _recentRuns.Dequeue();
+            }
+        }
+    }
+
+    /// <summary>立即手动执行一轮(Dashboard/运维):与调度轮互斥;正在执行返回 false;走同一后台执行纪律(系统身份快照+独立作用域)。
+    /// triggeredBy 供审计记录(操作人;HTTP 访问日志为权威,此为速览)。</summary>
+    public async Task<bool> TriggerNowAsync(string? triggeredBy = null, CancellationToken ct = default)
+    {
+        if (!await _runGate.WaitAsync(0, ct))
+        {
+            return false; // 调度轮或上一次手动在执行:忙碌
+        }
+        var started = DateTimeOffset.UtcNow;
+        try
+        {
+            await _runner.RunAsync(ContextSnapshot, RunOnceAsync, ct);
+            RecordRun(new JobRunRecord(started, DateTimeOffset.UtcNow, true, null, "manual", triggeredBy));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RecordRun(new JobRunRecord(started, DateTimeOffset.UtcNow, false, ex.Message, "manual", triggeredBy));
+            throw;
+        }
+        finally
+        {
+            _runGate.Release();
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_runOnStart)
@@ -76,18 +127,29 @@ public abstract class NexMeshCronJob : BackgroundService
 
     private async Task RunIsolatedAsync(CancellationToken stoppingToken)
     {
+        if (!await _runGate.WaitAsync(0, stoppingToken))
+        {
+            return;
+        }
+        var started = DateTimeOffset.UtcNow;
         try
         {
             await _runner.RunAsync(ContextSnapshot, RunOnceAsync, stoppingToken);
+            RecordRun(new JobRunRecord(started, DateTimeOffset.UtcNow, true, null, "scheduled", null));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            // 优雅停机中的在途一轮:正常退出
+            // 优雅停机中的在途一轮:正常退出(不记失败)
         }
         catch (Exception ex)
         {
             // 单轮异常隔离:记录后继续下一轮,绝不停摆整个调度器
+            RecordRun(new JobRunRecord(started, DateTimeOffset.UtcNow, false, ex.Message, "scheduled", null));
             _logger.LogError(ex, "定时作业 {JobName} 单轮执行失败(调度继续)", JobName);
+        }
+        finally
+        {
+            _runGate.Release();
         }
     }
 }
@@ -107,6 +169,62 @@ public abstract class NexMeshIntervalJob(TimeSpan interval, IServiceProvider? pr
 
     protected abstract Task RunOnceAsync(IServiceProvider scoped, CancellationToken ct);
 
+    /// <summary>执行闸:调度轮与手动触发互斥。</summary>
+    private readonly SemaphoreSlim _runGate = new(1, 1);
+
+    /// <summary>最近执行记录(环形 10 条)。</summary>
+    private readonly Queue<JobRunRecord> _recentRuns = new();
+    private readonly object _runsLock = new();
+
+    public IReadOnlyList<JobRunRecord> RecentRuns
+    {
+        get { lock (_runsLock) { return _recentRuns.ToList(); } }
+    }
+
+    private void RecordRun(JobRunRecord record)
+    {
+        lock (_runsLock)
+        {
+            _recentRuns.Enqueue(record);
+            while (_recentRuns.Count > 10)
+            {
+                _recentRuns.Dequeue();
+            }
+        }
+    }
+
+    /// <summary>立即手动执行一轮(Dashboard/运维):与调度轮互斥;正在执行返回 false;triggeredBy 供审计。</summary>
+    public async Task<bool> TriggerNowAsync(string? triggeredBy = null, CancellationToken ct = default)
+    {
+        if (!await _runGate.WaitAsync(0, ct))
+        {
+            return false;
+        }
+        var started = DateTimeOffset.UtcNow;
+        try
+        {
+            if (_runner is not null)
+            {
+                await _runner.RunAsync(ContextSnapshot, RunOnceAsync, ct);
+            }
+            else
+            {
+                await RunOnceAsync(NullServiceProvider.Instance, ct);
+            }
+            RecordRun(new JobRunRecord(started, DateTimeOffset.UtcNow, true, null, "manual", triggeredBy));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RecordRun(new JobRunRecord(started, DateTimeOffset.UtcNow, false, ex.Message, "manual", triggeredBy));
+            throw;
+        }
+        finally
+        {
+            _runGate.Release();
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -121,22 +239,36 @@ public abstract class NexMeshIntervalJob(TimeSpan interval, IServiceProvider? pr
             }
             try
             {
-                if (_runner is not null)
+                if (!await _runGate.WaitAsync(0, stoppingToken))
                 {
-                    await _runner.RunAsync(ContextSnapshot, RunOnceAsync, stoppingToken);
+                    continue;
                 }
-                else
+                var started = DateTimeOffset.UtcNow;
+                try
                 {
-                    await RunOnceAsync(NullServiceProvider.Instance, stoppingToken);
+                    if (_runner is not null)
+                    {
+                        await _runner.RunAsync(ContextSnapshot, RunOnceAsync, stoppingToken);
+                    }
+                    else
+                    {
+                        await RunOnceAsync(NullServiceProvider.Instance, stoppingToken);
+                    }
+                    RecordRun(new JobRunRecord(started, DateTimeOffset.UtcNow, true, null, "scheduled", null));
+                }
+                finally
+                {
+                    _runGate.Release();
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // 单轮异常隔离:吞掉继续;需要完整日志与身份快照时接 IServiceProvider
+                // 单轮异常隔离:吞掉继续(与 Cron 一致,记录失败便于面板速览)
+                RecordRun(new JobRunRecord(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, false, ex.Message, "scheduled", null));
             }
         }
     }
@@ -146,4 +278,17 @@ public abstract class NexMeshIntervalJob(TimeSpan interval, IServiceProvider? pr
         public static readonly NullServiceProvider Instance = new();
         public object? GetService(Type serviceType) => null;
     }
+}
+
+/// <summary>作业单次执行记录(Dashboard 展示;内存态,重启清零,审计走日志)。</summary>
+public sealed record JobRunRecord(
+    DateTimeOffset StartedAt,
+    DateTimeOffset FinishedAt,
+    bool Ok,
+    string? Error,
+    string Trigger,
+    string? TriggeredBy)
+{
+    /// <summary>耗时(毫秒)。</summary>
+    public long DurationMs => (long)(FinishedAt - StartedAt).TotalMilliseconds;
 }

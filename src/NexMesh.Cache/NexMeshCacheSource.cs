@@ -10,7 +10,7 @@ using Microsoft.Extensions.Caching.Memory;
 /// 条带固定 256 个,无字典泄漏。锁语义:L2 为 Redis 时 SET NX PX + Lua 令牌释放。
 /// null 不缓存(命中判定与取值分离——值类型 default 不能当"未命中")。
 /// </summary>
-public sealed class NexMeshCacheSource : ICacheSource, IDisposable
+public sealed class NexMeshCacheSource : ICacheSource, ICacheInspection, IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly SemaphoreSlim[] StripeLocks =
@@ -157,7 +157,7 @@ public sealed class NexMeshCacheSource : ICacheSource, IDisposable
             return ValueTask.CompletedTask;
         }
 
-        public void Dispose()
+    public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
@@ -168,6 +168,48 @@ public sealed class NexMeshCacheSource : ICacheSource, IDisposable
         public Task<bool> RenewAsync(TimeSpan ttl, CancellationToken ct = default) =>
             Task.FromResult(true); // 内存信号量无 TTL,续租恒成功
     }
+
+    // ── ICacheInspection(Dashboard/运维巡视)──────────────────────
+
+/// <summary>Redis 模式:SCAN 前缀键+PTTL;内存模式(无 Redis):L1 键快照(TTL 未知记 null)。</summary>
+public async Task<List<CacheKeyInfo>> ListKeysAsync(string keyPrefix, int limit = 200, CancellationToken ct = default)
+{
+    limit = Math.Clamp(limit, 1, 500);
+    var result = new List<CacheKeyInfo>();
+    if (_redis is not null && _multiplexer is not null)
+    {
+        var pattern = _prefix + keyPrefix + "*";
+        foreach (var endpoint in _multiplexer.GetEndPoints())
+        {
+            var server = _multiplexer.GetServer(endpoint);
+            if (server.IsReplica) continue;
+            await foreach (var key in server.KeysAsync(database: _redis.Database, pattern: pattern, pageSize: 100))
+            {
+                if (ct.IsCancellationRequested || result.Count >= limit) break;
+                var ttl = await _redis.KeyTimeToLiveAsync(key);
+                result.Add(new CacheKeyInfo(key.ToString()[_prefix.Length..],
+                    ttl is null ? null : (long)ttl.Value.TotalSeconds));
+            }
+            break; // 单主节点展示语义
+        }
+    }
+    else
+    {
+        // 内存模式:L1 快照(IMemoryCache 无枚举原语——用内部字典快照反射不可取;
+        // 诚实降级:返回提示性空集,Dashboard 显示"内存模式不支持键巡视")
+        return [];
+    }
+    return result;
+}
+
+/// <summary>删除单键:同时清 L1 与 L2(键以源 KeyPrefix 为界)。</summary>
+public async Task<bool> RemoveKeyAsync(string key, CancellationToken ct = default)
+{
+    _l1.Remove(_prefix + key);
+    if (_redis is null) return true;
+    return await _redis.KeyDeleteAsync(_prefix + key);
+}
+
 
     private sealed class RedisLock(StackExchange.Redis.IDatabase redis, string key, string token) : ICacheLock
     {

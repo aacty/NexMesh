@@ -1,5 +1,30 @@
 # 更新日志
 
+## 未发布(0.0.8)
+
+- **自建 OIDC IdP(框架可当身份中心)**:AddNexMeshOidcIdp/MapNexMeshOidcIdp——授权码+PKCE S256(标准 base64url challenge)/ client_credentials / 发现文档与 JWKS 挂根路径(OIDC 惯例,与 OidcJwksFetcher 拼法对齐)/ RS256+`kid` 签发 / RotateKey 轮换(轮换后 /jwks 自动吐新 kid);声明(sub/preferred_username/tenantid/roles)与 RP 验证器映射一一对应;authorize 校验客户端注册与 redirect_uri,一次性码 90 秒。3 项闭环测试(IdP↔RP 全流程:JWKS 发现→验签→token-exchange 换发本地令牌;码一次性+PKCE 错拒;client_credentials 错凭据 401)。实战纠偏两处:①token 端点曾把授权码兑换返回的 user_id 直接当 access_token 回发(兑换只返回 user_id,端点须查用户存储后签发完整声明);②PKCE 校验曾用 hex 与 base64url 挑战裸字符串比较且测试用同一错误生成法互相掩盖——修正为标准 S256 精确匹配
+
+- **性能基准补齐(HTTP 层之外)**:数据层三项(软删过滤计数 48.9μs/单行查询 58μs/插入 6.9ms——SQLite 文件库 fsync 特性,量级预期内)+缓存三项(L1 命中 48ns/未命中写 135ns/防击穿读 101ns)入 benchmarks 工程;数字入库质量契约。踩坑记录:FreeSql SQLite :memory: 在连接池下每连接独立(改文件库)、官方包无 Release 标记需 DisableOptimizationsValidator、SQLite Provider 须显式引包
+
+- **四大能力补齐(收尾批)**:
+  ①缓存键巡视——Cache 包新 ICacheInspection(ICacheFactory 增 SourceNames):Redis SCAN 按前缀列键+TTL(上限500)/单键删除(L1+L2 同清);内存模式诚实空集;Dashboard 缓存面板"巡视键"按钮+键表+删除;真 Redis 测试
+  ②迁移在线操作——IMigrationRunner.ListPendingAsync(与写同闸);Dashboard 迁移面板显示待应用清单+"在线执行"按钮(POST 走 RunPendingAsync 完整分布式锁+单迁移事务+fail-fast,与部署同路径不双跑)
+  ③gRPC Reflection——MapNexMeshGrpc 内建(Grpc.AspNetCore.Server.Reflection):客户端可动态发现 ContractGateway 服务与方法
+  ④OIDC JWKS 在线发现——OidcJwksFetcher(发现文档→jwks_uri→kid→RSA 字典,OIDC 标准 n/e Base64Url);验证器按 header.kid 匹配 JWKS(轮换:重新拉取后 SetJwksKeys 原子替换),无匹配回退静态 PEM;修复 Enabled 门槛 bug(纯 JWKS 模式 Issuer+密钥集即启用——此前要求必须有 Secret/PEM 导致 JWKS 拉取成功也被整体关闭,独立调试程序二分定位);自建 HttpListener IdP 端到端测试(kid 匹配通过/未知 kid 拒绝)
+- **服务发现(并入 NexMesh.Cache,非独立包——与缓存同依赖同语义:Redis 共享结构)**:Redis 注册表模式——实例键 TTL+心跳续约(每 TTL/2)优雅停机注销,服务索引惰性剔除(发现时清过期);AddNexMeshServiceDiscovery(连接串, self=>配置)+IServiceRegistry.DiscoverAsync;真 Redis 4 测(多实例并列/注销消失/TTL 过期剔除/心跳跨周期续约+停机注销)
+
+- **Dashboard 操作面审计加固(走查)**:①作业触发失败降级信封(反射 Task 异常不再 500);②JobRunRecord 补 TriggeredBy(操作人随记录,端点经 ICurrentUser 注入;HTTP 访问日志为权威);③Interval 作业失败也记记录(与 Cron 一致,修复吞异常不一致);④同名作业去重语义注释固化
+- **Dashboard 操作面交互修复(实机发现)**:操作按钮点击后不重新拉取 overview——旧数据重渲染导致界面无变化(操作实际已生效,属纯前端数据流缺陷);修复为"操作→toast 提示→400ms 后重拉 overview→重渲染标签与面板"闭环;实机验证(触发前后 manual 记录 0→1、踢下线 revoked 计数与提示)
+- **Dashboard 操作面(可读+可操作)**:①后台作业立即执行——NexMeshCronJob/IntervalJob 新增 TriggerNowAsync(与调度轮共用执行闸互斥,忙碌立即返回不排队)+ 最近执行记录(环形10条:时间/耗时/成败/来源 scheduled|manual,内存态审计走日志);Dashboard 作业面板每行"立即执行"按钮+执行记录明细;②会话踢下线——ISessionStore 新增 RevokeByUserAsync(默认接口方法,自定义实现者零破坏;内存/Redis 双实现,Redis 走 SCAN 删除);会话面板每行"踢下线"按钮(吊销该用户全部会话,旧 token 立即失效)。明确不做并注释:批量批准/迁移在线触发/缓存清空(防击穿)/Cron 热改(走部署)。测试:Worker 7(热执行/忙碌互斥/失败记录)、Dashboard 13(触发端点/踢下线 401 失效链)、Auth 33+2(内存/真Redis 按用户吊销)
+
+- **实战审查追加发现并修复:AI 面板风险徽章映射缺陷**——AIFunction 名去 Async 后缀而风险表按方法名登记,High 工具在面板显示为 Low 默认值(AiDemo 实机发现:ForceCloseOrder 标 High 显示 Low;安全展示级缺陷,审批门实际判定不受影响);修复双键登记(带/不带 Async)+ 回归测试(FakeToolRegistry+HostAssemblySet 显式注入——TestServer 下 EntryAssembly 是 testhost 的附带发现);修复过程中框架安全门再次实证:测试程序集含 High 夹具且未开审批门→全部宿主启动失败(fail-fast 纪律有效)
+- **Dashboard 实战审查(13/13 真实执行,程序入库 benchmarks/NexMesh.DashboardWarTests 可复跑)**:审批实弹(ApprovalGate 真实入队幂等合并→端点批准→Failed 终态);HTTP 200 并发×400 请求 overview 七面板聚合零失败(1.3万 req/s);Redis 真机双实例共享会话(各登录互见 5,吊销实时反映);1100 会话 SCAN 封顶 1000(140ms);离线 Redis 底层实测 RedisConnectionException;端点级面板异常 HTTP 200 降级。实战纠偏三处:SE.Redis 3.x 连接串 abortConnect(非 abortOnConnectFail)、军演跨进程撞共享登录限流(实证多实例全局限流设计)、断言从异常类型改为端到端行为级
+
+- **SSS+ 审查(三新面板批次)**:①ListAppliedAsync 与迁移写路径共享信号量——面板查询绝不吐 Approved 未 Executed 中间态/建表 DDL 不撞写事务(200 轮并发观察专项测试:只见 0/1 终态);②main 源记录即使迁移类已卸载仍展示(源清单=注册源∪main);③内存会话枚举快照语义注释固化;④Redis SCAN 取消/上限/主节点语义复核关闭
+- **Dashboard 三新面板(能力探测同机制)**:数据库迁移(IMigrationRunner.ListAppliedAsync 新查询接口,按源列已应用记录/耗时;库不可达源降级空)、缓存(经配置节读模式与源清单——零新契约;ConnectionString 不回显)、会话(ISessionStore 新增默认接口方法 ListActiveAsync——自定义实现者不受影响;内存/Redis 双实现;Token 仅前缀打码,Redis 走 IServer SCAN 主节点限 1000 条)。前端三张表随面板数据自动出现;5 项面板测试 + 2 项真 Redis 会话枚举实证(打码/吊销消失/过期不落)
+
+- **框架管理台 NexMesh Dashboard(并入 Host,零新包)**:能力探测驱动——overview 聚合端点逐面板探测容器(AI/审批门/后台作业/事件总线),启用了什么对应面板自动出现;加面板=实现 IDashboardPanel,前端(内嵌单页,原生 JS)数据驱动渲染零改动。静态页匿名可载+登录;审批中心批准/拒绝转发 ApprovalDecisionService(decidedBy=ICurrentUser,枚举投影字符串);AI Provider 不回 ApiKey;工具 Risk 徽章(反射扫 [NexMeshTool]);默认仅 Development。启动时钟由两宿主总装自动注册(修复 Map 期对已 build 容器 GetRequiredService 崩溃)。5 项测试 + AiDemo 实机验证(静态页 200/401 信封/登录后 4 面板亮起/AI Risk/作业清单/队列深度)
+
 ## v0.0.7 (2026-10-25)
 
 迁移分布式锁 + OIDC 外部 IdP 对接 + 契约 gRPC 面(三线并行)。

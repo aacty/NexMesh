@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\NexMesh.Cache\NexMesh.Cache.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Events\NexMesh.Events.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Data.Migrations\NexMesh.Data.Migrations.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Host\NexMesh.Host.csproj" />
   </ItemGroup>
 
   <ItemGroup>

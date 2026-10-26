@@ -13,15 +13,20 @@ using System.Text.Json;
 public sealed class OidcTokenValidator
 {
     private readonly OidcOptions _options;
+    private IReadOnlyDictionary<string, RSA>? _jwksKeys;
 
     public OidcTokenValidator(Microsoft.Extensions.Options.IOptions<AuthenticationOptions> options)
     {
         _options = options.Value.Oidc ?? new OidcOptions();
     }
 
-    /// <summary>启用条件:Issuer + (HS256 密钥≥32 字节或 RSA 公钥)。弱对称密钥(可被字典攻击)拒绝启用。</summary>
+    /// <summary>注入 JWKS 公钥集(密钥轮换:重新拉取后整体替换;kid→RSA)。null=用静态 RsaPublicKeyPem。</summary>
+    public void SetJwksKeys(IReadOnlyDictionary<string, RSA>? keys) => _jwksKeys = keys;
+
+    /// <summary>启用条件:Issuer + (HS256 密钥≥32 字节 / 静态 RSA 公钥 / 已注入 JWKS 公钥集)。
+    /// 弱对称密钥(可被字典攻击)不作为有效凭据;纯 JWKS 模式(Issuer+SetJwksKeys)同样启用。</summary>
     public bool Enabled => _options is { Issuer.Length: > 0 }
-        && (IsStrongSecret() || !string.IsNullOrEmpty(_options.RsaPublicKeyPem));
+        && (IsStrongSecret() || !string.IsNullOrEmpty(_options.RsaPublicKeyPem) || _jwksKeys is { Count: > 0 });
 
     private bool IsStrongSecret()
         => !string.IsNullOrEmpty(_options.Secret) && System.Text.Encoding.UTF8.GetByteCount(_options.Secret) >= 32;
@@ -70,22 +75,46 @@ public sealed class OidcTokenValidator
         }
         else if (alg == "RS256")
         {
-            if (string.IsNullOrEmpty(_options.RsaPublicKeyPem))
+            // 优先 JWKS(按 header.kid 匹配,支持密钥轮换);无 JWKS 回退静态 PEM
+            var keyId = header.TryGetValue("kid", out var kidEl) && kidEl.ValueKind == System.Text.Json.JsonValueKind.String
+                ? kidEl.GetString() : null;
+            RSA? rsa = null;
+            var owned = false;
+            if (_jwksKeys is { Count: > 0 } && keyId is not null && _jwksKeys.TryGetValue(keyId, out var jwks))
+            {
+                rsa = jwks;
+            }
+            else if (!string.IsNullOrEmpty(_options.RsaPublicKeyPem))
+            {
+                rsa = RSA.Create();
+                owned = true;
+                try
+                {
+                    rsa.ImportFromPem(_options.RsaPublicKeyPem);
+                }
+                catch (ArgumentException)
+                {
+                    rsa.Dispose();
+                    return null; // 公钥配置非法
+                }
+            }
+            if (rsa is null)
             {
                 return null;
             }
-            using var rsa = RSA.Create();
             try
             {
-                rsa.ImportFromPem(_options.RsaPublicKeyPem);
+                if (!rsa.VerifyData(signedContent, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
+                {
+                    return null;
+                }
             }
-            catch (ArgumentException)
+            finally
             {
-                return null; // 公钥配置非法
-            }
-            if (!rsa.VerifyData(signedContent, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
-            {
-                return null;
+                if (owned)
+                {
+                    rsa.Dispose();
+                }
             }
         }
         else
@@ -213,4 +242,79 @@ public sealed class OidcOptions
 
     /// <summary>时钟偏移容忍(秒)。</summary>
     public int ClockSkewSeconds { get; set; } = 60;
+}
+
+
+/// <summary>
+/// JWKS 在线发现:从 IdP 的 {Issuer}/.well-known/openid-configuration → jwks_uri 拉取公钥集,
+/// 按 kid 构建 RSA 字典(OIDC JWKS 标准:modulus(n)/exponent(e) Base64Url)。
+/// 调用方(业务启动或定时轮换)拉取后 OidcTokenValidator.SetJwksKeys 整体替换——原子轮换。
+/// </summary>
+public static class OidcJwksFetcher
+{
+    /// <summary>拉取并解析 JWKS;失败抛出(调用方决定重试/降级静态 PEM)。</summary>
+    public static async Task<IReadOnlyDictionary<string, RSA>> FetchAsync(
+        string issuer, System.Net.Http.HttpClient? http = null, CancellationToken ct = default)
+    {
+        var owned = http is null;
+        if (http is null)
+        {
+            http = new System.Net.Http.HttpClient();
+        }
+        try
+        {
+            var discoveryUrl = issuer.TrimEnd('/') + "/.well-known/openid-configuration";
+            using var discovery = await http.GetAsync(discoveryUrl, ct);
+            discovery.EnsureSuccessStatusCode();
+            using var discoveryDoc = System.Text.Json.JsonDocument.Parse(await discovery.Content.ReadAsStringAsync(ct));
+            var jwksUri = discoveryDoc.RootElement.GetProperty("jwks_uri").GetString()
+                ?? throw new InvalidOperationException("发现文档缺 jwks_uri");
+
+            using var jwks = await http.GetAsync(jwksUri, ct);
+            jwks.EnsureSuccessStatusCode();
+            using var jwksDoc = System.Text.Json.JsonDocument.Parse(await jwks.Content.ReadAsStringAsync(ct));
+            var keys = new Dictionary<string, RSA>(StringComparer.Ordinal);
+            foreach (var key in jwksDoc.RootElement.GetProperty("keys").EnumerateArray())
+            {
+                if (!key.TryGetProperty("kty", out var kty) || kty.GetString() != "RSA"
+                    || !key.TryGetProperty("n", out var nEl) || !key.TryGetProperty("e", out var eEl))
+                {
+                    continue;
+                }
+                var kid = key.TryGetProperty("kid", out var kidEl) ? kidEl.GetString() : null;
+                if (string.IsNullOrEmpty(kid))
+                {
+                    continue;
+                }
+                var rsa = RSA.Create();
+                try
+                {
+                    rsa.ImportParameters(new RSAParameters
+                    {
+                        Modulus = Base64UrlDecode(nEl.GetString()),
+                        Exponent = Base64UrlDecode(eEl.GetString()),
+                    });
+                    keys[kid!] = rsa;
+                }
+                catch (FormatException)
+                {
+                    rsa.Dispose(); // 非法参数的键跳过
+                }
+            }
+            return keys;
+        }
+        finally
+        {
+            if (owned)
+            {
+                http?.Dispose();
+            }
+        }
+    }
+
+    private static byte[] Base64UrlDecode(string? value)
+    {
+        var padding = (4 - (value?.Length ?? 0) % 4) % 4;
+        return Convert.FromBase64String((value ?? "").Replace('-', '+').Replace('_', '/') + new string('=', padding));
+    }
 }

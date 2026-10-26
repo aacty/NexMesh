@@ -35,7 +35,23 @@ public interface ICacheLock : IAsyncDisposable, IDisposable
 public interface ICacheFactory
 {
     ICacheSource Get(string name = "main");
+
+    /// <summary>已注册的缓存源名称(Dashboard 展示)。</summary>
+    IReadOnlyList<string> SourceNames { get; }
 }
+
+/// <summary>缓存键巡视(Dashboard/运维):按键前缀列键与 TTL(上限防拖垮)。</summary>
+public interface ICacheInspection
+{
+    /// <summary>按前缀列键(上限内返回键+剩余 TTL 秒,null=永不过期)。</summary>
+    Task<List<CacheKeyInfo>> ListKeysAsync(string keyPrefix, int limit = 200, CancellationToken ct = default);
+
+    /// <summary>删除单键(运维谨慎操作;键以缓存源 KeyPrefix 为界,防误删外部键)。</summary>
+    Task<bool> RemoveKeyAsync(string key, CancellationToken ct = default);
+}
+
+/// <summary>缓存键信息。</summary>
+public sealed record CacheKeyInfo(string Key, long? TtlSeconds);
 
 /// <summary>NexMesh:Cache 配置节。</summary>
 public sealed class NexMeshCacheOptions

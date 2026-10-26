@@ -122,3 +122,89 @@ public class CronJobTests
         Assert.Equal(10, localNext.Hour);
     }
 }
+
+/// <summary>手动触发(Dashboard 操作面):热执行/忙碌互斥/执行记录。</summary>
+public class ManualTriggerTests
+{
+    private sealed class FakeLifetime2 : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+        public void StopApplication() { }
+    }
+
+    private static ServiceProvider ManualProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddNexMesh();
+        services.AddSingleton<IHostApplicationLifetime>(new FakeLifetime2());
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class SlowJob(IServiceProvider sp) : NexMeshIntervalJob(TimeSpan.FromHours(1), sp)
+    {
+        public static int Runs;
+        private readonly IServiceProvider _sp = sp;
+        protected override Task RunOnceAsync(IServiceProvider scoped, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Runs);
+            return Task.Delay(800, ct); // 模拟长作业
+        }
+    }
+
+    [Fact]
+    public async Task TriggerNow_立即执行一轮_并记录manual来源()
+    {
+        var services = new ServiceCollection();
+        services.AddNexMesh();
+        var sp = ManualProvider();
+        var job = new SlowJob(sp);
+        SlowJob.Runs = 0;
+
+        var triggered = await job.TriggerNowAsync();
+        Assert.True(triggered);
+        Assert.Equal(1, SlowJob.Runs);
+        Assert.Single(job.RecentRuns);
+        Assert.Equal("manual", job.RecentRuns[0].Trigger);
+        Assert.True(job.RecentRuns[0].Ok);
+    }
+
+    [Fact]
+    public async Task 执行中再次触发_返回忙碌false_不重入()
+    {
+        var services = new ServiceCollection();
+        services.AddNexMesh();
+        var sp = ManualProvider();
+        var job = new SlowJob(sp);
+        SlowJob.Runs = 0;
+
+        var first = job.TriggerNowAsync(); // 800ms 执行中
+        await Task.Delay(100);
+        var busy = await job.TriggerNowAsync(); // 闸被占用 → false
+        Assert.False(busy);
+        await first;
+        Assert.Equal(1, SlowJob.Runs); // 无重入
+    }
+
+    [Fact]
+    public async Task 失败执行_记录失败与来源()
+    {
+        var services = new ServiceCollection();
+        services.AddNexMesh();
+        var sp = ManualProvider();
+        var failing = new FailingJob(sp);
+        await Assert.ThrowsAnyAsync<Exception>(() => failing.TriggerNowAsync());
+        Assert.Single(failing.RecentRuns);
+        Assert.False(failing.RecentRuns[0].Ok);
+        Assert.Equal("manual", failing.RecentRuns[0].Trigger);
+        Assert.NotNull(failing.RecentRuns[0].Error);
+    }
+
+    private sealed class FailingJob(IServiceProvider sp) : NexMeshIntervalJob(TimeSpan.FromHours(1), sp)
+    {
+        protected override Task RunOnceAsync(IServiceProvider scoped, CancellationToken ct)
+            => throw new InvalidOperationException("演练失败");
+    }
+}

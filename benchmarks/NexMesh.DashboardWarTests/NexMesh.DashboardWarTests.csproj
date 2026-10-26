@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <Description>NexMesh Dashboard 实战审查:审批实弹/HTTP并发面板聚合/Redis 双实例会话共享/SCAN 上限/离线降级(可复跑)</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\..\src\NexMesh.Host\NexMesh.Host.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Data.Migrations\NexMesh.Data.Migrations.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Worker\NexMesh.Worker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FreeSql.Provider.Sqlite" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+</Project>

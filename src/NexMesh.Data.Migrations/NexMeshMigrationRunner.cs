@@ -130,6 +130,99 @@ public sealed class NexMeshMigrationRunner(
         }
     }
 
+    /// <summary>列出待应用迁移:与写路径同闸(不吐 RunPending 中间态);库不可达源返回空。</summary>
+    public async Task<List<MigrationSummary>> ListPendingAsync(CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var scope = services.CreateScope();
+            var migrations = scope.ServiceProvider.GetServices<NexMeshMigration>()
+                .OrderBy(m => m.Version)
+                .ToList();
+            var factory = scope.ServiceProvider.GetService<NexMesh.Data.IDbFactory>();
+            if (factory is null)
+            {
+                return [];
+            }
+            var result = new List<MigrationSummary>();
+            foreach (var sourceGroup in migrations.GroupBy(m => m.Source, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var db = factory.Get(sourceGroup.Key);
+                    EnsureRecordTable(db);
+                    var applied = db.Select<MigrationRecordEntity>()
+                        .Where(r => r.Source == sourceGroup.Key)
+                        .ToList()
+                        .Select(r => r.Version)
+                        .ToHashSet();
+                    result.AddRange(sourceGroup
+                        .Where(m => !applied.Contains(m.Version))
+                        .Select(m => new MigrationSummary(m.Source, m.Version, m.Name, DateTime.MinValue, 0)));
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "[NexMesh.Migrations] 读取源 {Source} 待应用迁移失败(面板降级为空)", sourceGroup.Key);
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>列出已应用迁移(读路径与 RunPending/Revert 共享闸——避免读到 Approved 未 Executed 中间态或建表 DDL 撞写事务;
+    /// 注册源 ∪ main 之外的"已卸载迁移的源"不展示(边界由注释固化);库不可达的源降级空)。</summary>
+    public async Task<List<MigrationSummary>> ListAppliedAsync(CancellationToken cancellationToken = default)
+    {
+        // 展示查询毫秒级:与写路径互斥不影响可用性,却保证不吐中间态
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            using var scope = services.CreateScope();
+            var sources = scope.ServiceProvider.GetServices<NexMeshMigration>()
+                .Select(m => m.Source)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (!sources.Contains("main", StringComparer.OrdinalIgnoreCase))
+            {
+                sources.Insert(0, "main"); // main 库的记录即便迁移类已卸载也要展示
+            }
+
+            var result = new List<MigrationSummary>();
+            var factory = scope.ServiceProvider.GetService<NexMesh.Data.IDbFactory>();
+            if (factory is null)
+            {
+                return result; // 无数据层:无迁移记录可读
+            }
+            foreach (var source in sources)
+            {
+                try
+                {
+                    var db = factory.Get(source);
+                    EnsureRecordTable(db);
+                    var records = db.Select<MigrationRecordEntity>()
+                        .Where(r => r.Source == source)
+                        .OrderBy(r => r.Version)
+                        .ToList();
+                    result.AddRange(records.Select(r => new MigrationSummary(r.Source, r.Version, r.Name, r.AppliedAt, r.DurationMs)));
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "[NexMesh.Migrations] 读取源 {Source} 迁移记录失败(面板降级为空)", source);
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private async Task RevertCoreAsync(string source, long version, CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
