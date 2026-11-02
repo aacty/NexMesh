@@ -44,7 +44,7 @@ internal static class AutoApiDispatcher
         IReadOnlyDictionary<string, string>? routeValues = null)
     {
         var service = context.RequestServices.GetRequiredService(endpoint.ServiceType);
-        var parameters = endpoint.Method.GetParameters();
+        var parameters = ContractInvokerCache.GetParameters(endpoint.Method);
 
         var args = new object?[parameters.Length];
         for (var i = 0; i < parameters.Length; i++)

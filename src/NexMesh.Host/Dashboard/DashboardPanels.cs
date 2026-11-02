@@ -163,10 +163,20 @@ internal sealed class ApprovalsPanel : IDashboardPanel
             return new Dictionary<string, object?> { ["enabled"] = false };
         }
         var pending = await store.ListPendingAsync();
+        // 终态历史(默认接口方法:未覆写的自定义 store 返回空表);状态枚举投影字符串
+        var history = (await store.ListHistoryAsync(20, ct)).Select(h => new Dictionary<string, object?>
+        {
+            ["id"] = h.Id,
+            ["toolName"] = h.ToolName,
+            ["status"] = h.Status.ToString(),
+            ["decidedBy"] = h.DecidedBy,
+            ["decidedAt"] = h.DecidedAt,
+        }).ToList();
         return new Dictionary<string, object?>
         {
             ["enabled"] = true,
             ["pendingCount"] = pending.Count,
+            ["historyCount"] = history.Count,
             ["pending"] = pending.Select(p => new Dictionary<string, object?>
             {
                 ["id"] = p.Id,
@@ -174,6 +184,7 @@ internal sealed class ApprovalsPanel : IDashboardPanel
                 ["description"] = p.Description,
                 ["createdAt"] = p.CreatedAt,
             }).ToList(),
+            ["history"] = history,
         };
     }
 }

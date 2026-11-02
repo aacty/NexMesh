@@ -57,7 +57,17 @@ public static class NexMeshDashboardExtensions
                 return Results.Ok(ApiResult<object?>.Ok(new { enabled = false, message = "审批门未启用(AddNexMeshApproval)" }));
             }
             var pending = await store.ListPendingAsync();
-            return Results.Ok(ApiResult<object?>.Ok(new { enabled = true, pending }));
+            // 终态历史:自定义 store 未覆写时默认空表(接口默认方法,实现者零破坏);状态枚举投影字符串
+            var history = (await store.ListHistoryAsync(20, ct)).Select(h => new
+            {
+                h.Id,
+                h.ToolName,
+                Status = h.Status.ToString(),
+                h.DecidedBy,
+                h.DecidedAt,
+                h.Error,
+            }).ToList();
+            return Results.Ok(ApiResult<object?>.Ok(new { enabled = true, pending, history }));
         });
         WithAuth(approvals);
 

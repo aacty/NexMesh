@@ -837,6 +837,47 @@ public class OidcIdpRoundTripTests : IAsyncLifetime
         }));
         Assert.Equal(HttpStatusCode.Unauthorized, bad.StatusCode);
     }
+
+    [Fact]
+    public async Task 密钥轮换_JWKS自动吐新kid_旧令牌对新密钥集验签失败()
+    {
+        // ① 轮换前签发一枚旧令牌
+        var tokenService = _idp.Services.GetRequiredService<NexMesh.Auth.Oidc.OidcIdpTokenService>();
+        var oldJwt = tokenService.IssueUserToken(new NexMesh.Auth.Oidc.OidcIdpUser("idp-u1", "门户用户", "tenant-x", ["manager"]), "rp-app");
+
+        // ② RotateKey(单 key 即时切换)→ RP 重新拉 JWKS:/jwks 自动吐新 kid
+        tokenService.RotateKey();
+        var newKeys = await OidcJwksFetcher.FetchAsync(_idpBase, _idpClient);
+        Assert.NotEmpty(newKeys);
+
+        var validator = _rp.Services.GetRequiredService<OidcTokenValidator>();
+        validator.SetJwksKeys(newKeys);
+
+        // ③ 轮换后新签令牌:新 JWKS 验签通过(全声明)
+        var freshJwt = tokenService.IssueUserToken(new NexMesh.Auth.Oidc.OidcIdpUser("idp-u1", "门户用户", "tenant-x", ["manager"]), "rp-app");
+        var fresh = validator.Validate(freshJwt);
+        Assert.NotNull(fresh);
+        Assert.Equal("idp-u1", fresh!.UserId);
+
+        // ④ 旧令牌:其 kid 不在轮换后的 JWKS 中,验签失败(单 key 即时切换的既定语义)
+        Assert.Null(validator.Validate(oldJwt));
+    }
+
+    [Fact]
+    public async Task authorize_未注册redirect_uri_精确匹配拒绝_开放重定向防线()
+    {
+        // SSS+审核:redirect_uri 必须与注册清单精确匹配(前缀/域相似一律不算)——open-redirect 防线
+        var response = await _idpClient.GetAsync(
+            "/oidc/authorize?response_type=code&client_id=rp-app&redirect_uri=http://evil.example/cb&code_challenge=abc&code_challenge_method=S256&user_id=idp-u1");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("invalid_client", body);
+
+        // 未注册客户端同样拒绝
+        var unknownClient = await _idpClient.GetAsync(
+            "/oidc/authorize?response_type=code&client_id=whoami&redirect_uri=http://localhost/oidc/echo&code_challenge=abc&code_challenge_method=S256&user_id=idp-u1");
+        Assert.Equal(HttpStatusCode.BadRequest, unknownClient.StatusCode);
+    }
 }
 
 /// <summary>禁止自动跟随重定向的包装 handler(authorize 端点断言 302+Location 用)。</summary>

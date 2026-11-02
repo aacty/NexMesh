@@ -1,0 +1,223 @@
+namespace NexMesh.Data
+{
+    public enum FreeSqlDBMode
+    {
+        Single = 0,
+        MasterSlave = 1,
+    }
+    public sealed class FreeSqlDBOptions
+    {
+        public FreeSqlDBOptions() { }
+        public bool AutoSyncStructure { get; set; }
+        public string ConnectionString { get; set; }
+        public FreeSql.DataType DataType { get; set; }
+        public bool EnableHealthCheck { get; set; }
+        public bool EnableSqlTracing { get; set; }
+        public bool LazyLoading { get; set; }
+        public NexMesh.Data.FreeSqlDBMode Mode { get; set; }
+        public string[] SlaveConnectionString { get; set; }
+        public void Validate() { }
+    }
+    public abstract class FreeSqlDBSourceBase<TFreeSqlDBSource> : NexMesh.Data.IFreeSqlDBSource<TFreeSqlDBSource>
+        where TFreeSqlDBSource :  class
+    {
+        protected FreeSqlDBSourceBase(IFreeSql<TFreeSqlDBSource> sqlClient) { }
+        public IFreeSql<TFreeSqlDBSource> SqlClient { get; }
+    }
+    public static class FreeSqlDBSourceExtensions
+    {
+        public static NexMesh.Core.NexMeshBuilder AddDBSource<TFreeSqlDBSource>(this NexMesh.Core.NexMeshBuilder builder, NexMesh.Data.FreeSqlDBOptions options, System.Action<FreeSql.FreeSqlBuilder>? freeSqlBuilderAction = null, System.Action<IFreeSql<TFreeSqlDBSource>>? freeSqlAction = null, string? healthCheckName = null)
+            where TFreeSqlDBSource :  class { }
+    }
+    public interface IAudited
+    {
+        System.DateTime CreateTime { get; set; }
+        System.DateTime? UpdateTime { get; set; }
+    }
+    public interface IDbFactory
+    {
+        IFreeSql Get(string name = "main");
+    }
+    public interface IFreeSqlDBSource<TFreeSqlDBSource>
+        where TFreeSqlDBSource :  class
+    {
+        IFreeSql<TFreeSqlDBSource> SqlClient { get; }
+    }
+    public interface IHasConcurrencyStamp
+    {
+        string ConcurrencyStamp { get; set; }
+    }
+    public interface IIdGenerator
+    {
+        long NextId();
+        long NextLong();
+        long NextSnowflakeId();
+        string NextSnowflakeString();
+        string NextString();
+    }
+    public interface IRepository { }
+    public interface IRepository<T>
+        where T :  class
+    {
+        System.Threading.Tasks.Task<T> AddAsync(T entity, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<int> AddManyAsync(System.Collections.Generic.IEnumerable<T> entities, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<long> CountAsync(System.Linq.Expressions.Expression<System.Func<T, bool>>? where = null, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<T?> FindAsync(object id, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<T>> ListAsync(System.Linq.Expressions.Expression<System.Func<T, bool>>? where = null, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<NexMesh.PagedResult<T>> PagedAsync(int pageIndex, int pageSize, System.Linq.Expressions.Expression<System.Func<T, bool>>? where = null, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<bool> SoftDeleteAsync(object id, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<T> UpdateAsync(T entity, System.Threading.CancellationToken ct = default);
+    }
+    public interface ISoftDelete
+    {
+        bool IsDeleted { get; set; }
+    }
+    public interface ITenantEntity
+    {
+        string TenantId { get; set; }
+    }
+    public interface IUserAudited
+    {
+        string? CreateUserId { get; set; }
+        string? UpdateUserId { get; set; }
+    }
+    public sealed class NexMeshDbOptions
+    {
+        public NexMeshDbOptions() { }
+        public bool? AutoSyncStructure { get; set; }
+        public string ConnectionString { get; set; }
+        public FreeSql.DataType DataType { get; set; }
+        public bool EnableSoftDeleteFilter { get; set; }
+        public bool EnableTenantFilter { get; set; }
+        public int WorkerId { get; set; }
+    }
+    public static class NexMeshDbServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshDb(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, string name = "main", System.Action<NexMesh.Data.NexMeshDbOptions>? configure = null) { }
+    }
+    public sealed class NexMeshIdGenerator : NexMesh.Data.IIdGenerator
+    {
+        public NexMeshIdGenerator() { }
+        public long NextId() { }
+        public long NextLong() { }
+        public long NextSnowflakeId() { }
+        public string NextSnowflakeString() { }
+        public string NextString() { }
+    }
+    public static class NexMeshRepositoryExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshRepositories(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, params System.Reflection.Assembly[] assemblies) { }
+    }
+    public static class NexMeshSnowflake
+    {
+        public static void Configure(int workerId) { }
+        public static long NextId() { }
+    }
+    public sealed class Repository<T> : NexMesh.Data.IRepository<T>
+        where T :  class
+    {
+        public Repository(NexMesh.Data.IDbFactory dbFactory, NexMesh.Core.ICurrentUser? user) { }
+        public System.Threading.Tasks.Task<T> AddAsync(T entity, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<int> AddManyAsync(System.Collections.Generic.IEnumerable<T> entities, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<long> CountAsync(System.Linq.Expressions.Expression<System.Func<T, bool>>? where = null, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<T?> FindAsync(object id, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<T>> ListAsync(System.Linq.Expressions.Expression<System.Func<T, bool>>? where = null, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<NexMesh.PagedResult<T>> PagedAsync(int pageIndex, int pageSize, System.Linq.Expressions.Expression<System.Func<T, bool>>? where = null, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<bool> SoftDeleteAsync(object id, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<T> UpdateAsync(T entity, System.Threading.CancellationToken ct = default) { }
+    }
+    public static class TenantAccessor
+    {
+        public static string? Current { get; }
+    }
+}
+namespace NexMesh.Data.Migrations
+{
+    public interface IMigrationLease : System.IDisposable { }
+    public interface IMigrationLock
+    {
+        System.Threading.Tasks.Task<NexMesh.Data.Migrations.IMigrationLease?> TryAcquireAsync(System.Threading.CancellationToken cancellationToken = default);
+    }
+    public interface IMigrationRunner
+    {
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListAppliedAsync(System.Threading.CancellationToken cancellationToken = default);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListPendingAsync(System.Threading.CancellationToken cancellationToken = default);
+        System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default);
+        System.Threading.Tasks.Task<int> RunPendingAsync(System.Threading.CancellationToken cancellationToken = default);
+    }
+    [FreeSql.DataAnnotations.Index("ux_nexmesh_migration_source_version", "source,version", true)]
+    [FreeSql.DataAnnotations.Table(Name="nexmesh_migration")]
+    public class MigrationRecordEntity
+    {
+        public MigrationRecordEntity() { }
+        [FreeSql.DataAnnotations.Column(Name="applied_at")]
+        public System.DateTime AppliedAt { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="checksum", StringLength=128)]
+        public string Checksum { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="duration_ms")]
+        public int DurationMs { get; set; }
+        [FreeSql.DataAnnotations.Column(IsIdentity=true, IsPrimary=true, Name="id")]
+        public long Id { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="name", StringLength=256)]
+        public string Name { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="source", StringLength=64)]
+        public string Source { get; set; }
+        [FreeSql.DataAnnotations.Column(Name="version")]
+        public long Version { get; set; }
+    }
+    public sealed class MigrationSummary : System.IEquatable<NexMesh.Data.Migrations.MigrationSummary>
+    {
+        public MigrationSummary(string Source, long Version, string Name, System.DateTime AppliedAt, int DurationMs) { }
+        public System.DateTime AppliedAt { get; init; }
+        public int DurationMs { get; init; }
+        public string Name { get; init; }
+        public string Source { get; init; }
+        public long Version { get; init; }
+    }
+    public abstract class NexMeshMigration
+    {
+        protected NexMeshMigration() { }
+        public string Checksum { get; }
+        public abstract string Name { get; }
+        public virtual string Source { get; }
+        public abstract long Version { get; }
+        public virtual System.Threading.Tasks.Task DownAsync(IFreeSql db, System.Threading.CancellationToken cancellationToken = default) { }
+        public virtual IFreeSql ResolveDb(System.IServiceProvider services) { }
+        public abstract System.Threading.Tasks.Task UpAsync(IFreeSql db, System.Threading.CancellationToken cancellationToken = default);
+    }
+    public static class NexMeshMigrationAppExtensions
+    {
+        public static System.Threading.Tasks.Task MigrateNexMeshAsync(this Microsoft.AspNetCore.Builder.WebApplication app, System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class NexMeshMigrationRunner : NexMesh.Data.Migrations.IMigrationRunner
+    {
+        public NexMeshMigrationRunner(System.IServiceProvider services, Microsoft.Extensions.Logging.ILogger<NexMesh.Data.Migrations.NexMeshMigrationRunner>? logger = null, NexMesh.Data.Migrations.IMigrationLock? distributedLock = null) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListAppliedAsync(System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Data.Migrations.MigrationSummary>> ListPendingAsync(System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task RevertAsync(string source, long version, System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task<int> RunPendingAsync(System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class NexMeshMigrationsOptions
+    {
+        public const string SectionName = "NexMesh:Migrations";
+        public NexMeshMigrationsOptions() { }
+        public bool Enabled { get; set; }
+    }
+    public static class NexMeshMigrationsServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshMigration<TMigration>(this Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+            where TMigration : NexMesh.Data.Migrations.NexMeshMigration { }
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshMigrations(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration, params System.Reflection.Assembly[] migrationAssemblies) { }
+    }
+    public sealed class NoopMigrationLock : NexMesh.Data.Migrations.IMigrationLock
+    {
+        public static readonly NexMesh.Data.Migrations.NoopMigrationLock Instance;
+        public NoopMigrationLock() { }
+        public System.Threading.Tasks.Task<NexMesh.Data.Migrations.IMigrationLease?> TryAcquireAsync(System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class RedisMigrationLock : NexMesh.Data.Migrations.IMigrationLock
+    {
+        public RedisMigrationLock(StackExchange.Redis.IConnectionMultiplexer redis, string key = "nexmesh:migrations:lock", System.TimeSpan? lease = default, Microsoft.Extensions.Logging.ILogger<NexMesh.Data.Migrations.RedisMigrationLock>? logger = null) { }
+        public System.Threading.Tasks.Task<NexMesh.Data.Migrations.IMigrationLease?> TryAcquireAsync(System.Threading.CancellationToken cancellationToken = default) { }
+    }
+}

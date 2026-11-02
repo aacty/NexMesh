@@ -44,10 +44,10 @@ public sealed class NexMeshBackgroundRunner(
             activity.SetTag("nexmesh.context.tenant_id", context?.TenantId);
         }
 
-        using var ambient = context is null ? null : accessor.Enter(context);
-        // SSS+第二轮修复:租户槽随作用域同步/还原——审批执行、工作流步骤等后台路径
-        // 的租户全局过滤(S4)与语义缓存隔离(S5)才能读到快照租户而非触发请求的租户
-        using var tenantScope = TenantHelper.Enter(context?.TenantId);
+        // SSS+第二轮修复(双槽单作用域):租户槽随作用域同步/还原——审批执行、工作流步骤等后台路径
+        // 的租户全局过滤(S4)与语义缓存隔离(S5)才能读到快照租户而非触发请求的租户;
+        // 无快照时身份槽不动、仅显式清租户(防后台分支继承触发请求的租户)
+        using var ambient = ContextSlotBinding.Enter(accessor, context);
         using var scope = rootProvider.CreateScope();
 
         await work(scope.ServiceProvider, linked.Token);

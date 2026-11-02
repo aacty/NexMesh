@@ -40,6 +40,31 @@ public sealed class InMemoryApprovalStore : IApprovalStore
     public Task<ApprovalRequest?> FindPendingByIdempotencyKeyAsync(string idempotencyKey) =>
         Task.FromResult(_store.Values.FirstOrDefault(
             r => r.Status == ApprovalStatus.Pending && r.IdempotencyKey == idempotencyKey));
+
+    public Task<List<ApprovalRequest>> ListHistoryAsync(int limit = 20, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_store.Values
+            .Where(r => r.Status != ApprovalStatus.Pending)
+            .OrderByDescending(r => r.DecidedAt ?? r.CreatedAt)
+            .Take(limit)
+            .ToList());
+
+    public Task<ApprovalRequest?> ClaimForDecisionAsync(string id, ApprovalStatus decision, string decidedBy)
+    {
+        // 引用相等 CAS:并发决策恰好一人成功;重试上限 64 次(持续争持 fail-closed 判负——高危工具宁可拒不可双执行)
+        for (var attempt = 0; attempt < 64; attempt++)
+        {
+            if (!_store.TryGetValue(id, out var current) || current.Status != ApprovalStatus.Pending)
+            {
+                return Task.FromResult<ApprovalRequest?>(null);
+            }
+            var claimed = current with { Status = decision, DecidedAt = DateTime.Now, DecidedBy = decidedBy };
+            if (_store.TryUpdate(id, claimed, current))
+            {
+                return Task.FromResult<ApprovalRequest?>(claimed);
+            }
+        }
+        return Task.FromResult<ApprovalRequest?>(null);
+    }
 }
 
 /// <summary>审批队列持久化实体(FreeSql CodeFirst,表 nexmesh_approvals)。</summary>
@@ -129,6 +154,39 @@ public sealed class FreeSqlApprovalStore(IFreeSql db) : IApprovalStore
             .Where(e => e.Status == ApprovalStatus.Pending && e.IdempotencyKey == idempotencyKey)
             .FirstAsync();
         return entity is null ? null : ToRecord(entity);
+    }
+
+    public async Task<ApprovalRequest?> ClaimForDecisionAsync(string id, ApprovalStatus decision, string decidedBy)
+    {
+        await _tableSync.Value;
+        // 单语句原子认领:WHERE status=pending 守卫,影响行数即胜负——并发决策恰好一人成功
+        var affected = await db.Update<ApprovalRequestEntity>()
+            .Set(e => e.Status, decision)
+            .Set(e => e.DecidedAt, DateTime.Now)
+            .Set(e => e.DecidedBy, decidedBy)
+            .Where(e => e.Id == id && e.Status == ApprovalStatus.Pending)
+            .ExecuteAffrowsAsync();
+        if (affected == 0)
+        {
+            return null; // 不存在或已被他人认领
+        }
+        var entity = await db.Select<ApprovalRequestEntity>().Where(e => e.Id == id).FirstAsync();
+        return entity is null ? null : ToRecord(entity);
+    }
+
+    public async Task<List<ApprovalRequest>> ListHistoryAsync(int limit = 20, CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            return []; // SSS+审核:FreeSql Take(≤0) 会忽略 LIMIT(实测 SQLite 返回全表)——契约要求"取前 limit 条",≤0 显式守卫为空表
+        }
+        await _tableSync.Value;
+        var entities = await db.Select<ApprovalRequestEntity>()
+            .Where(e => e.Status != ApprovalStatus.Pending)
+            .OrderByDescending(e => e.DecidedAt ?? e.CreatedAt)
+            .Take(limit)
+            .ToListAsync();
+        return entities.Select(ToRecord).ToList();
     }
 
     private static ApprovalRequestEntity ToEntity(ApprovalRequest r) => new()

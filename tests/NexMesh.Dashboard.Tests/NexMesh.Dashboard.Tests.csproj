@@ -7,7 +7,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexMesh.Host\NexMesh.Host.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Worker\NexMesh.Worker.csproj" />
-    <ProjectReference Include="..\..\src\NexMesh.Data.Migrations\NexMesh.Data.Migrations.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.AI\NexMesh.AI.csproj" />
   </ItemGroup>
 

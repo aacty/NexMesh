@@ -21,12 +21,11 @@ public sealed class ApprovalDecisionService(
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <summary>批准并执行。返回执行后的审批单;状态机非法流转抛 MeshException。</summary>
+    /// <summary>批准并执行。返回执行后的审批单;状态机非法流转抛 MeshException。
+    /// SSS+审核修复:先原子认领(Pending→Approved,并发恰好一人胜出)再执行——修复 check-then-act 竞态双执行高危工具。</summary>
     public async Task<ApprovalRequest> ApproveAsync(string id, string decidedBy)
     {
-        var request = await GetPendingOrThrow(id);
-        request = request with { Status = ApprovalStatus.Approved, DecidedAt = DateTime.Now, DecidedBy = decidedBy };
-        await store.UpdateAsync(request);
+        var request = await ClaimOrThrow(id, ApprovalStatus.Approved, decidedBy);
 
         var snapshot = NexMeshContext.FromMessageHeaders(request.ContextHeaders);
         try
@@ -52,19 +51,9 @@ public sealed class ApprovalDecisionService(
         return request;
     }
 
-    /// <summary>拒绝:仅落状态,永不执行。</summary>
-    public async Task<ApprovalRequest> RejectAsync(string id, string decidedBy)
-    {
-        var request = await GetPendingOrThrow(id);
-        request = request with
-        {
-            Status = ApprovalStatus.Rejected,
-            DecidedAt = DateTime.Now,
-            DecidedBy = decidedBy,
-        };
-        await store.UpdateAsync(request);
-        return request;
-    }
+    /// <summary>拒绝:仅落状态,永不执行(原子认领,并发下败者 409)。</summary>
+    public Task<ApprovalRequest> RejectAsync(string id, string decidedBy)
+        => ClaimOrThrow(id, ApprovalStatus.Rejected, decidedBy);
 
     /// <summary>查找原始工具:注册器暴露的未包装函数(挂起包装会造成无限再入队)。</summary>
     private AIFunction? ResolveRawFunction(string toolName) => toolRegistry.FindRawFunction(toolName);
@@ -76,14 +65,16 @@ public sealed class ApprovalDecisionService(
             dict.ToDictionary(kv => kv.Key, kv => (object?)kv.Value, StringComparer.OrdinalIgnoreCase));
     }
 
-    private async Task<ApprovalRequest> GetPendingOrThrow(string id)
+    /// <summary>原子认领决策权;失败区分 404(不存在)与 409(已非 Pending)。</summary>
+    private async Task<ApprovalRequest> ClaimOrThrow(string id, ApprovalStatus decision, string decidedBy)
     {
-        var request = await store.GetAsync(id)
-            ?? throw new MeshException($"审批单 {id} 不存在", 40401, 404);
-        if (request.Status != ApprovalStatus.Pending)
+        var claimed = await store.ClaimForDecisionAsync(id, decision, decidedBy);
+        if (claimed is not null)
         {
-            throw new MeshException($"审批单 {id} 已处于 {request.Status} 状态,不可重复决策", 40903, 409);
+            return claimed;
         }
-        return request;
+        var existing = await store.GetAsync(id)
+            ?? throw new MeshException($"审批单 {id} 不存在", 40401, 404);
+        throw new MeshException($"审批单 {id} 已处于 {existing.Status} 状态,不可重复决策", 40903, 409);
     }
 }

@@ -18,6 +18,9 @@ internal static class ContractInvokerCache
     /// <summary>Task&lt;T&gt;.Result 取值器:(task) → T(装箱)。替代 PropertyInfo.GetValue 反射。</summary>
     private static readonly ConcurrentDictionary<PropertyInfo, Func<Task, object?>> TaskResultGetters = new();
 
+    /// <summary>参数元数据快照:GetParameters 的数组分配与元数据遍历从每请求收编为首调一次(调用方只读使用)。</summary>
+    private static readonly ConcurrentDictionary<MethodInfo, ParameterInfo[]> Parameters = new();
+
     /// <summary>List&lt;T&gt;.ToArray() 转换器:(IList) → T[](装箱)。替代 GetMethod("ToArray").Invoke。</summary>
     private static readonly ConcurrentDictionary<Type, Func<IList, object>> CollectionToArray = new();
 
@@ -50,6 +53,10 @@ internal static class ContractInvokerCache
             return Expression.Lambda<Func<object, object?[], object?>>(body, serviceParam, argsParam).Compile();
         });
     }
+
+    /// <summary>参数元数据快照(只读);替代热路径每请求 method.GetParameters()。</summary>
+    public static ParameterInfo[] GetParameters(MethodInfo method)
+        => Parameters.GetOrAdd(method, static m => m.GetParameters());
 
     /// <summary>取 Task&lt;T&gt;.Result 读值器(Task 非泛型返回 null,与 PropertyInfo 语义一致)。</summary>
     public static Func<Task, object?> GetTaskResultGetter(PropertyInfo resultProperty)

@@ -296,7 +296,7 @@ async function buildApprovals(root){
   if(d.enabled===false){root.innerHTML='<div class="empty">审批门未启用(AddNexMeshApproval)</div>';return;}
   root.innerHTML='';
   const list=d.pending||[];
-  if(!list.length){root.innerHTML='<div class="empty">暂无待审项</div>';return;}
+  if(!list.length&&!((d.history||[]).length)){root.innerHTML='<div class="empty">暂无待审项与历史</div>';return;}
   for(const p of list){
     const item=document.createElement('div');item.className='appr-item';
     item.innerHTML=`<div class="grow"><div class="t">${esc(p.toolName)}</div><div class="d">${esc(p.description)}</div><div class="d">${esc(p.createdAt)}</div></div>`;
@@ -304,6 +304,18 @@ async function buildApprovals(root){
     const no=document.createElement('button');no.className='no';no.textContent='拒绝';
     yes.onclick=()=>decide(p.id,true);no.onclick=()=>decide(p.id,false);
     item.appendChild(yes);item.appendChild(no);root.appendChild(item);
+  }
+  const history=d.history||[];
+  if(history.length){
+    const head=document.createElement('div');head.className='note';head.style.margin='14px 0 6px';
+    head.textContent='终态历史(最近 '+history.length+' 条)';root.appendChild(head);
+    for(const h of history){
+      const item=document.createElement('div');item.className='appr-item';
+      const badge=h.status==='Executed'?'low':(h.status==='Failed'||h.status==='Rejected'?'high':'off');
+      item.innerHTML=`<div class="grow"><div class="t">${esc(h.toolName)} <span class="badge ${badge}">${esc(h.status)}</span></div>
+        <div class="d">决定人 ${esc(h.decidedBy||'—')} · ${esc(h.decidedAt||'')}${h.error?' · 错误: '+esc(h.error):''}</div></div>`;
+      root.appendChild(item);
+    }
   }
 }
 async function decide(id,approve){

@@ -98,6 +98,62 @@ public class GrpcContractGatewayTests : IAsyncLifetime
         });
         Assert.Contains("\"code\":400", missing.EnvelopeJson); // 未找到方法 → 400 信封(中文经 Web 编码器转义)
     }
+
+    [Fact]
+    public async Task gRPC网关_非法ArgsJson_独立信封400不冒充服务端故障()
+    {
+        var client = new NexMesh.Grpc.ContractGateway.ContractGatewayClient(CreateChannel());
+
+        // SSS+审核:恶意/非法 args_json 是客户端输入错误 → "参数 JSON 非法"(Warning 级,400),
+        // 与"服务内部错误"(Error 级告警)分离——告警信噪比;信封中文经 Web 序列化为 \uXXXX,断言反序列化后的字段值
+        var malformed = await client.InvokeAsync(new NexMesh.Grpc.ContractCall
+        {
+            Service = "grpcdemo",
+            Method = "Add",
+            ArgsJson = "not-a-json{{{",
+        });
+        using var doc = System.Text.Json.JsonDocument.Parse(malformed.EnvelopeJson);
+        Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(400, doc.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal("参数 JSON 非法", doc.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task gRPC网关_并发首触_索引一次构建与计划创建竞态安全()
+    {
+        // SSS+ 审核专项:直打 BuildIndex 双检锁与 GetOrAdd 并发创建——48 线程同时首触
+        // (混合"多方法各首次"与"同方法齐首次"),全部结果正确即无撕裂/漏答
+        var registry = _app.Services.GetRequiredService<NexMesh.Host.NexMeshGrpcExtensions.ContractGrpcRegistry>();
+        var methods = new[] { "Add", "Echo" };
+        const int THREADS = 48;
+        var failures = 0;
+
+        await Parallel.ForAsync(0, THREADS, async (w, ct) =>
+        {
+            // 每线程先 Find(未构建/半构建索引都可能被观察到)再走完整调用
+            var method = methods[w % methods.Length];
+            var plan = registry.Find("grpcdemo", method);
+            if (plan is null)
+            {
+                Interlocked.Increment(ref failures);
+                return;
+            }
+            // 同方法并发首触同一计划(计划缓存竞态)
+            var echoPlan = registry.Find("GRPCDEMO", method.ToUpperInvariant()); // 大小写不敏感路径
+            if (echoPlan is null || echoPlan.Endpoint.Method != plan.Endpoint.Method)
+            {
+                Interlocked.Increment(ref failures);
+            }
+        });
+
+        // 首触竞态后,经真实 gRPC 调用各方法仍结果正确
+        var client = new NexMesh.Grpc.ContractGateway.ContractGatewayClient(CreateChannel());
+        var add = await client.InvokeAsync(new NexMesh.Grpc.ContractCall { Service = "grpcdemo", Method = "Add", ArgsJson = """{"a":3,"b":4}""" });
+        var echo = await client.InvokeAsync(new NexMesh.Grpc.ContractCall { Service = "grpcdemo", Method = "Echo", ArgsJson = """{"message":"x"}""" });
+        Assert.Equal(0, failures);
+        Assert.Contains("\"data\":7", add.EnvelopeJson);
+        Assert.Contains("echo:x", echo.EnvelopeJson);
+    }
 }
 
 /// <summary>gRPC Reflection:客户端经 ServerReflection 动态发现 ContractGateway 服务。</summary>

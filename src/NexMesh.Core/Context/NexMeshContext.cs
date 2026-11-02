@@ -66,22 +66,30 @@ public sealed record NexMeshContext
 }
 
 /// <summary>
+/// 环境槽位唯一持有者:身份/租户两个 AsyncLocal 同处一处——单独绑定(TenantHelper/Accessor)与
+/// 双槽绑定(ContextSlotBinding)共用同一槽位实例,AsyncLocal 身份不因重构漂移。
+/// </summary>
+internal static class ContextSlots
+{
+    internal static readonly AsyncLocal<NexMeshContext?> Context = new();
+    internal static readonly AsyncLocal<string?> Tenant = new();
+}
+
+/// <summary>
 /// 租户运行时取值器(AsyncLocal,跨包共享):Data.FreeSql 的全局过滤、SemanticCache 的缓存键隔离均使用。
 /// 由 NexMeshContextMiddleware(请求入口)与 Repository 构造(仓储路径)写入。
 /// </summary>
 public static class TenantHelper
 {
-    private static readonly AsyncLocal<string?> Slot = new();
-
     /// <summary>
     /// 当前租户 ID。null 语义(SSS+第二轮修正,与全局过滤对齐,fail-closed):
     /// 过滤条件为 `TenantId == Current`——null 时匹配"未指定租户"的行,而非"不过滤"。
     /// 系统路径(后台任务)的租户由 RunAsync/中间件显式设置,不依赖默认值。
     /// </summary>
-    public static string? Current => Slot.Value;
+    public static string? Current => ContextSlots.Tenant.Value;
 
     /// <summary>设置当前租户(遗留入口,建议用 Enter 作用域)。</summary>
-    public static void Set(string? tenantId) => Slot.Value = tenantId;
+    public static void Set(string? tenantId) => ContextSlots.Tenant.Value = tenantId;
 
     /// <summary>
     /// 作用域式绑定:写入租户槽,Dispose 还原先前值(嵌套安全)。
@@ -89,14 +97,14 @@ public static class TenantHelper
     /// </summary>
     public static IDisposable Enter(string? tenantId)
     {
-        var previous = Slot.Value;
-        Slot.Value = tenantId;
+        var previous = ContextSlots.Tenant.Value;
+        ContextSlots.Tenant.Value = tenantId;
         return new RestoreScope(previous);
     }
 
     private sealed class RestoreScope(string? previous) : IDisposable
     {
-        public void Dispose() => Slot.Value = previous;
+        public void Dispose() => ContextSlots.Tenant.Value = previous;
     }
 }
 
@@ -114,19 +122,69 @@ public interface INexMeshContextAccessor
 
 public sealed class AsyncLocalNexMeshContextAccessor : INexMeshContextAccessor
 {
-    private static readonly AsyncLocal<NexMeshContext?> Slot = new();
-
-    public NexMeshContext? Current => Slot.Value;
+    public NexMeshContext? Current => ContextSlots.Context.Value;
 
     public IDisposable Enter(NexMeshContext context)
     {
-        var previous = Slot.Value;
-        Slot.Value = context;
+        var previous = ContextSlots.Context.Value;
+        ContextSlots.Context.Value = context;
         return new RestoreScope(previous);
+    }
+
+    /// <summary>双槽绑定(身份+租户):单作用域对象,Dispose 按嵌套逆序(租户→身份)还原先前值。
+    /// 供框架请求入口/后台任务路径使用,较两次独立 Enter 少 1 个作用域对象与 1 次接口分发。</summary>
+    internal IDisposable EnterWithTenant(NexMeshContext context)
+    {
+        var previousContext = ContextSlots.Context.Value;
+        var previousTenant = ContextSlots.Tenant.Value;
+        ContextSlots.Context.Value = context;
+        ContextSlots.Tenant.Value = context.TenantId;
+        return new DualRestoreScope(previousContext, previousTenant);
     }
 
     private sealed class RestoreScope(NexMeshContext? previous) : IDisposable
     {
-        public void Dispose() => Slot.Value = previous;
+        public void Dispose() => ContextSlots.Context.Value = previous;
+    }
+
+    private sealed class DualRestoreScope(NexMeshContext? previousContext, string? previousTenant) : IDisposable
+    {
+        public void Dispose()
+        {
+            ContextSlots.Tenant.Value = previousTenant;
+            ContextSlots.Context.Value = previousContext;
+        }
+    }
+}
+
+/// <summary>
+/// 框架路径的双槽绑定收口(请求入口中间件/BackgroundRunner 专用,不外露):
+/// 默认 accessor 走单作用域双槽绑定;自定义 accessor 实现自动回退组合两次 Enter(行为一致);
+/// 无快照(context=null)时身份槽保持不动(不伪造上下文),仅显式清租户——防后台分支继承触发请求的租户。
+/// </summary>
+internal static class ContextSlotBinding
+{
+    internal static IDisposable? Enter(INexMeshContextAccessor accessor, NexMeshContext? context)
+    {
+        if (context is null)
+        {
+            return TenantHelper.Enter(null);
+        }
+        if (accessor is AsyncLocalNexMeshContextAccessor local)
+        {
+            return local.EnterWithTenant(context);
+        }
+        var contextScope = accessor.Enter(context);
+        var tenantScope = TenantHelper.Enter(context.TenantId);
+        return new CompositeScope(tenantScope, contextScope);
+    }
+
+    private sealed class CompositeScope(IDisposable tenantScope, IDisposable contextScope) : IDisposable
+    {
+        public void Dispose()
+        {
+            tenantScope.Dispose(); // 嵌套逆序:租户先还原(与历史 using 嵌套一致)
+            contextScope.Dispose();
+        }
     }
 }

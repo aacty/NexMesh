@@ -40,25 +40,90 @@ public static class NexMeshGrpcExtensions
         return endpoints;
     }
 
-    /// <summary>契约程序集载体(网关服务构造注入);惰性缓存 (service,method)→端点 映射,避免每请求全量反射扫描。</summary>
+    /// <summary>契约程序集载体(网关服务构造注入)。(service,method)→端点索引一次性构建(此前每个新键触发全量重扫,首 M 次调用 O(M²));
+    /// 每端点调用计划(参数元数据+编译委托)按需创建并缓存——调用路径零反射。</summary>
     public sealed class ContractGrpcRegistry(System.Reflection.Assembly[] assemblies)
     {
         public System.Reflection.Assembly[] Assemblies { get; } = assemblies;
 
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, AutoApiEndpoint?> _cache = new(StringComparer.OrdinalIgnoreCase);
+        // SSS+ 审核修复:volatile 发布(弱内存模型下锁外读者可见完整构建的字典)+ 私有锁对象(公共类锁 this 可被外部劫持)
+        private volatile Dictionary<string, AutoApiEndpoint>? _index;
+        private readonly object _gate = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<AutoApiEndpoint, GatewayPlan> _plans = new();
 
-        /// <summary>按 (service, method) 查端点;首扫构建,后续 O(1);未知方法(null)同样缓存不重复扫。</summary>
-        public AutoApiEndpoint? Find(string service, string method)
-            => _cache.GetOrAdd($"{service}.{method}", _ =>
-                ContractApiExtensions.ScanContractEndpoints(Assemblies).FirstOrDefault(e =>
-                    RouteService(e.Route).Equals(service, StringComparison.OrdinalIgnoreCase)
-                    && MethodName(e).Equals(method, StringComparison.OrdinalIgnoreCase)));
+        /// <summary>按 (service, method) 查调用计划;未命中返回 null(索引缺失即未知方法,无需另行缓存)。</summary>
+        public GatewayPlan? Find(string service, string method)
+        {
+            var index = _index ?? BuildIndex();
+            return index.TryGetValue($"{service}.{method}", out var endpoint) && endpoint is not null
+                ? _plans.GetOrAdd(endpoint, CreatePlan)
+                : null;
+        }
+
+        private Dictionary<string, AutoApiEndpoint> BuildIndex()
+        {
+            lock (_gate)
+            {
+                if (_index is { } built)
+                {
+                    return built;
+                }
+                var index = new Dictionary<string, AutoApiEndpoint>(StringComparer.OrdinalIgnoreCase);
+                foreach (var endpoint in ContractApiExtensions.ScanContractEndpoints(Assemblies))
+                {
+                    // 重复 (service,method) 首个胜出(与历史 FirstOrDefault 语义一致)
+                    index.TryAdd($"{RouteService(endpoint.Route)}.{MethodName(endpoint)}", endpoint);
+                }
+                _index = index;
+                return index;
+            }
+        }
 
         internal static string RouteService(string route) => route.Split('/')[1].ToLowerInvariant();
 
         internal static string MethodName(AutoApiEndpoint e) =>
             e.Method.Name.EndsWith("Async", StringComparison.Ordinal) ? e.Method.Name[..^5] : e.Method.Name;
+
+        /// <summary>每端点调用计划:参数元数据快照(替代每请求 GetParameters)+ 编译调用器 + 编译 Task&lt;T&gt;.Result 读值器(替代每请求 GetProperty/GetValue)。</summary>
+        internal static GatewayPlan CreatePlan(AutoApiEndpoint endpoint)
+        {
+            var parameters = endpoint.Method.GetParameters();
+            var planned = new GatewayParameter[parameters.Length];
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                var p = parameters[i];
+                planned[i] = new GatewayParameter(
+                    p.Name ?? "", p.ParameterType, p.HasDefaultValue, p.DefaultValue,
+                    p.ParameterType == typeof(CancellationToken));
+            }
+            var returnType = endpoint.Method.ReturnType;
+            // Task<T>:编译 Result 读值器;非泛型 Task:无读值器(返回 null,与历史 GetProperty 语义一致)
+            Func<Task, object?>? taskResult = null;
+            if (returnType != typeof(Task) && typeof(Task).IsAssignableFrom(returnType))
+            {
+                taskResult = ContractInvokerCache.GetTaskResultGetter(returnType.GetProperty("Result")!);
+            }
+            return new GatewayPlan(endpoint, planned, ContractInvokerCache.GetInvoker(endpoint.Method), taskResult);
+        }
     }
+
+    /// <summary>每端点预编译调用计划:热路径零反射。</summary>
+    public sealed class GatewayPlan(
+        AutoApiEndpoint endpoint,
+        GatewayParameter[] parameters,
+        Func<object, object?[], object?> invoke,
+        Func<Task, object?>? taskResult)
+    {
+        public AutoApiEndpoint Endpoint { get; } = endpoint;
+        public GatewayParameter[] Parameters { get; } = parameters;
+        public Func<object, object?[], object?> Invoke { get; } = invoke;
+
+        /// <summary>Task&lt;T&gt;.Result 编译读值器;非泛型 Task 为 null。</summary>
+        public Func<Task, object?>? TaskResult { get; } = taskResult;
+    }
+
+    /// <summary>契约方法参数计划快照(名称/类型/缺省值/取消令牌位)。</summary>
+    public sealed record GatewayParameter(string Name, Type Type, bool HasDefault, object? Default, bool IsCancellationToken);
 
     /// <summary>网关服务:Invoke(service, method, args_json) → 契约实现 → ApiResult 信封。</summary>
     public sealed class ContractGatewayService(
@@ -69,20 +134,37 @@ public static class NexMeshGrpcExtensions
             NexMesh.Grpc.ContractCall request,
             GrpcCore.ServerCallContext context)
         {
-            var (endpoint, error) = Resolve(request.Service, request.Method);
-            if (error is not null)
+            var plan = Resolve(request.Service, request.Method);
+            if (plan is null)
             {
-                return Reply(Fail(error));
+                return Reply(Fail(string.IsNullOrWhiteSpace(request.Service) || string.IsNullOrWhiteSpace(request.Method)
+                    ? "service 与 method 不能为空"
+                    : $"未找到契约方法 {request.Service}.{request.Method}"));
             }
             try
             {
-                var args = BindArgs(endpoint!, request.ArgsJson, context.CancellationToken);
-                var service = global::Grpc.Core.ServerCallContextExtensions.GetHttpContext(context).RequestServices.GetRequiredService(endpoint!.ServiceType);
-                var result = ContractInvokerCache.GetInvoker(endpoint.Method)(service, args);
-                var payload = await UnwrapAsync(result);
+                var args = BindArgs(plan, request.ArgsJson, context.CancellationToken);
+                var service = global::Grpc.Core.ServerCallContextExtensions.GetHttpContext(context).RequestServices.GetRequiredService(plan.Endpoint.ServiceType);
+                var raw = plan.Invoke(service, args);
+                object? payload;
+                if (raw is Task task)
+                {
+                    await task; // 业务异常原样抛出(无 TargetInvocationException 包装)
+                    payload = plan.TaskResult?.Invoke(task); // 编译读值器:Task<T>→T(装箱);非泛型 Task→null
+                }
+                else
+                {
+                    payload = raw;
+                }
                 var envelope = ApiResult<object?>.Ok(payload);
                 envelope.TraceId = System.Diagnostics.Activity.Current?.TraceId.ToString();
                 return Reply(JsonSerializer.Serialize(envelope, Json));
+            }
+            catch (System.Text.Json.JsonException jex)
+            {
+                // SSS+审核:客户端恶意/非法 args_json 是输入错误——独立信封 400,不冒充服务端故障污染 Error 告警
+                logger?.LogWarning(jex, "[NexMesh.gRPC] Invoke {Service}.{Method} 参数 JSON 非法", request.Service, request.Method);
+                return Reply(Fail("参数 JSON 非法"));
             }
             catch (Exception ex)
             {
@@ -91,51 +173,36 @@ public static class NexMeshGrpcExtensions
             }
         }
 
-        private (AutoApiEndpoint?, string?) Resolve(string service, string method)
-        {
-            if (string.IsNullOrWhiteSpace(service) || string.IsNullOrWhiteSpace(method))
-            {
-                return (null, "service 与 method 不能为空");
-            }
-            var target = registry.Find(service, method); // 惰性缓存:首扫后 O(1)
-            return target is null ? (null, $"未找到契约方法 {service}.{method}") : (target, null);
-        }
+        private GatewayPlan? Resolve(string service, string method)
+            => string.IsNullOrWhiteSpace(service) || string.IsNullOrWhiteSpace(method)
+                ? null
+                : registry.Find(service, method);
 
-        private static object?[] BindArgs(AutoApiEndpoint endpoint, string? argsJson, CancellationToken cancellationToken)
+        private static object?[] BindArgs(GatewayPlan plan, string? argsJson, CancellationToken cancellationToken)
         {
             using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(argsJson) ? "{}" : argsJson!);
             var root = doc.RootElement.ValueKind == JsonValueKind.Object ? doc.RootElement : default;
 
-            var parameters = endpoint.Method.GetParameters();
+            var parameters = plan.Parameters;
             var invokeArgs = new object?[parameters.Length];
             for (var i = 0; i < parameters.Length; i++)
             {
                 var p = parameters[i];
-                if (p.ParameterType == typeof(CancellationToken))
+                if (p.IsCancellationToken)
                 {
                     invokeArgs[i] = cancellationToken;
                     continue;
                 }
-                if (root.ValueKind == JsonValueKind.Undefined || !root.TryGetProperty(p.Name!, out var value))
+                if (root.ValueKind == JsonValueKind.Undefined || !root.TryGetProperty(p.Name, out var value))
                 {
-                    invokeArgs[i] = p.HasDefaultValue ? p.DefaultValue : null;
+                    invokeArgs[i] = p.HasDefault ? p.Default : null;
                     continue;
                 }
                 invokeArgs[i] = value.ValueKind == JsonValueKind.Null
                     ? null
-                    : value.Deserialize(p.ParameterType, Json);
+                    : value.Deserialize(p.Type, Json);
             }
             return invokeArgs;
-        }
-
-        private static async Task<object?> UnwrapAsync(object? result)
-        {
-            if (result is Task task)
-            {
-                await task;
-                return task.GetType().GetProperty("Result")?.GetValue(task);
-            }
-            return result;
         }
 
         private static NexMesh.Grpc.ContractReply Reply(string json) => new() { EnvelopeJson = json };

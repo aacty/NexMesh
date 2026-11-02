@@ -166,6 +166,17 @@ public class DashboardTests
         Assert.Equal(HttpStatusCode.Conflict, again.StatusCode); // MeshException 40903 → 409
         var againBody = await again.Content.ReadAsStringAsync();
         Assert.Contains("409", againBody);
+
+        // 终态历史:决策后 history 出现(倒序最新在前——批准后于拒绝,Failed 居首;状态投影字符串,Pending 不进)
+        var afterRaw = await client.GetStringAsync("/nexmesh/dashboard/approvals");
+        var history = JsonDocument.Parse(afterRaw).RootElement.GetProperty("data").GetProperty("history");
+        Assert.Equal(2, history.GetArrayLength());
+        Assert.Equal("Failed", history[0].GetProperty("status").GetString());
+        Assert.Equal("demo.tool.echo", history[0].GetProperty("toolName").GetString());
+        Assert.Equal("Rejected", history[1].GetProperty("status").GetString());
+        Assert.Equal("demo.tool.kill", history[1].GetProperty("toolName").GetString());
+        Assert.Equal("dash-1", history[1].GetProperty("decidedBy").GetString());
+        Assert.All(history.EnumerateArray(), h => Assert.NotEqual("Pending", h.GetProperty("status").GetString()));
         await app.DisposeAsync();
     }
 }

@@ -51,4 +51,25 @@ public interface IApprovalStore
     Task<List<ApprovalRequest>> ListPendingAsync();
     Task<ApprovalRequest> UpdateAsync(ApprovalRequest request);
     Task<ApprovalRequest?> FindPendingByIdempotencyKeyAsync(string idempotencyKey);
+
+    /// <summary>终态历史(Executed/Failed/Rejected,按决定时间倒序,取前 limit 条;limit ≤ 0 返回空表。Dashboard 审批中心历史表)。
+    /// 默认接口方法返回空表——自定义实现者零破坏,可按存储能力覆写。</summary>
+    Task<List<ApprovalRequest>> ListHistoryAsync(int limit = 20, CancellationToken cancellationToken = default)
+        => Task.FromResult(new List<ApprovalRequest>());
+
+    /// <summary>原子认领决策权:仅当审批单仍为 Pending 时原子置为目标状态(Approved/Rejected)并盖章,返回认领后的审批单;
+    /// 返回 null = 不存在或已非 Pending(并发/重复决策判负)——并发决策恰好一人胜出,高危工具绝不双执行。
+    /// 默认实现为非原子"检查后写入"(语义一致但存在竞态窗口);自定义存储实现者应覆写为存储级原子
+    /// (关系库:UPDATE...WHERE status=pending 看影响行数;内存:引用 CAS)。</summary>
+    async Task<ApprovalRequest?> ClaimForDecisionAsync(string id, ApprovalStatus decision, string decidedBy)
+    {
+        var current = await GetAsync(id);
+        if (current is null || current.Status != ApprovalStatus.Pending)
+        {
+            return null;
+        }
+        var claimed = current with { Status = decision, DecidedAt = DateTime.Now, DecidedBy = decidedBy };
+        await UpdateAsync(claimed);
+        return claimed;
+    }
 }

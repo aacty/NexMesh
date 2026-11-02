@@ -91,7 +91,24 @@ namespace NexMesh.Host
         {
             public ContractGrpcRegistry(System.Reflection.Assembly[] assemblies) { }
             public System.Reflection.Assembly[] Assemblies { get; }
-            public NexMesh.Core.AutoApi.AutoApiEndpoint? Find(string service, string method) { }
+            public NexMesh.Host.NexMeshGrpcExtensions.GatewayPlan? Find(string service, string method) { }
+        }
+        public sealed class GatewayParameter : System.IEquatable<NexMesh.Host.NexMeshGrpcExtensions.GatewayParameter>
+        {
+            public GatewayParameter(string Name, System.Type Type, bool HasDefault, object? Default, bool IsCancellationToken) { }
+            public object? Default { get; init; }
+            public bool HasDefault { get; init; }
+            public bool IsCancellationToken { get; init; }
+            public string Name { get; init; }
+            public System.Type Type { get; init; }
+        }
+        public sealed class GatewayPlan
+        {
+            public GatewayPlan(NexMesh.Core.AutoApi.AutoApiEndpoint endpoint, NexMesh.Host.NexMeshGrpcExtensions.GatewayParameter[] parameters, System.Func<object, object?[], object?> invoke, System.Func<System.Threading.Tasks.Task, object?>? taskResult) { }
+            public NexMesh.Core.AutoApi.AutoApiEndpoint Endpoint { get; }
+            public System.Func<object, object?[], object?> Invoke { get; }
+            public NexMesh.Host.NexMeshGrpcExtensions.GatewayParameter[] Parameters { get; }
+            public System.Func<System.Threading.Tasks.Task, object?>? TaskResult { get; }
         }
     }
     public static class NexMeshHostExtensions

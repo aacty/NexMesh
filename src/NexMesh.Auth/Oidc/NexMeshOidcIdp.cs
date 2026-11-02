@@ -136,7 +136,8 @@ public static class NexMeshOidcIdpExtensions
                     return Results.Json(new { error = "invalid_request" }, statusCode: 400);
                 }
                 var client = await clients.FindAsync(clientId);
-                if (client?.ClientSecret != clientSecret)
+                // SSS+审核:secret 比较用常量时间(防计时侧信道逐字节爆破);null 密钥视为未配置凭据一律拒绝
+                if (client is null || client.ClientSecret is null || !SecretMatches(client.ClientSecret, clientSecret))
                 {
                     return Results.Json(new { error = "invalid_client" }, statusCode: 401);
                 }
@@ -148,6 +149,12 @@ public static class NexMeshOidcIdpExtensions
 
         return endpoints;
     }
+
+    /// <summary>常量时间 secret 比较(长度差异本身可测属业界可接受;内容绝不提前退出)。</summary>
+    private static bool SecretMatches(string expected, string provided)
+        => System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(expected),
+            System.Text.Encoding.UTF8.GetBytes(provided));
 }
 
 /// <summary>IdP 配置。</summary>
@@ -214,9 +221,11 @@ public sealed class InMemoryClientStore : IOidcClientStore
 /// JWT 签发(sub/preferred_username/tenantid/roles → 与 RP 侧 OidcTokenValidator 的声明映射对齐)、
 /// 授权码签发与 PKCE 兑换(一次性,90 秒)。
 /// </summary>
-public sealed class OidcIdpTokenService(OidcIdpOptions options)
+public sealed class OidcIdpTokenService(OidcIdpOptions options, TimeProvider? timeProvider = null)
 {
     private readonly string _issuerHolder = options.Issuer;
+    // 时间可注入(SSS+审核):过期语义可测(与 LoginRateLimiter 的 TimeProvider 先例一致),默认系统时钟
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
     private RSA _key = RSA.Create(2048);
     private string _kid = $"nexmesh-idp-{Guid.CreateVersion7():N}";
     private readonly ConcurrentDictionary<string, (string ClientId, string RedirectUri, string Challenge, string UserId, DateTimeOffset ExpiresAt)> _codes = new();
@@ -256,8 +265,8 @@ public sealed class OidcIdpTokenService(OidcIdpOptions options)
             ["roles"] = user.Roles ?? [],
             ["iss"] = _issuerHolder,
             ["aud"] = clientId,
-            ["exp"] = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
-            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["exp"] = _clock.GetUtcNow().AddHours(1).ToUnixTimeSeconds(),
+            ["iat"] = _clock.GetUtcNow().ToUnixTimeSeconds(),
         });
         var h = B64Url(System.Text.Encoding.UTF8.GetBytes(header));
         var p = B64Url(System.Text.Encoding.UTF8.GetBytes(payload));
@@ -273,7 +282,7 @@ public sealed class OidcIdpTokenService(OidcIdpOptions options)
     public string IssueAuthorizationCode(string clientId, string redirectUri, string challenge, string userId)
     {
         var code = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        _codes[code] = (clientId, redirectUri, challenge, userId, DateTimeOffset.UtcNow.AddSeconds(90));
+        _codes[code] = (clientId, redirectUri, challenge, userId, _clock.GetUtcNow().AddSeconds(90));
         return code;
     }
 
@@ -284,7 +293,7 @@ public sealed class OidcIdpTokenService(OidcIdpOptions options)
         {
             return null; // 不存在或已用(一次性)
         }
-        if (entry.ExpiresAt < DateTimeOffset.UtcNow || entry.ClientId != clientId)
+        if (entry.ExpiresAt < _clock.GetUtcNow() || entry.ClientId != clientId)
         {
             return null;
         }

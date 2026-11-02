@@ -157,4 +157,77 @@ public class ContextPropagationTests
         }
         Assert.Equal("from-http", user.UserId);          // 还原后回退 HTTP 源
     }
+
+    /// <summary>非默认 accessor 实现:走 ContextSlotBinding 的组合回退路径(身份+租户两个独立作用域)。</summary>
+    private sealed class RecordingAccessor : INexMeshContextAccessor
+    {
+        public int EnterCount;
+        public NexMeshContext? Current { get; private set; }
+
+        public IDisposable Enter(NexMeshContext context)
+        {
+            EnterCount++;
+            var previous = Current;
+            Current = context;
+            return new Scope(() => Current = previous);
+        }
+
+        private sealed class Scope(Action restore) : IDisposable
+        {
+            public void Dispose() => restore();
+        }
+    }
+
+    [Fact]
+    public async Task 自定义Accessor_组合回退_身份租户照常绑定与还原()
+    {
+        var services = new ServiceCollection();
+        services.AddNexMesh();
+        services.AddSingleton<IHostApplicationLifetime>(new FakeLifetime());
+        var recording = new RecordingAccessor();
+        services.AddSingleton<INexMeshContextAccessor>(recording);
+        var provider = services.BuildServiceProvider();
+        var runner = provider.GetRequiredService<INexMeshBackgroundRunner>();
+
+        string? userIdInside = null, tenantInside = null;
+        await runner.RunAsync(new NexMeshContext { UserId = "u-custom", TenantId = "hosp-X" }, async (_, _) =>
+        {
+            userIdInside = recording.Current?.UserId;
+            tenantInside = TenantHelper.Current;
+            await Task.CompletedTask;
+        });
+
+        Assert.Equal(1, recording.EnterCount);           // 自定义 accessor 走组合回退(Enter 一次)
+        Assert.Equal("u-custom", userIdInside);          // 身份经自定义 accessor 绑定
+        Assert.Equal("hosp-X", tenantInside);            // 租户槽同时绑定(快照携带)
+        Assert.Null(recording.Current);                  // 任务结束还原
+        Assert.Null(TenantHelper.Current);
+    }
+
+    [Fact]
+    public async Task 无快照_仅清租户_防后台分支继承触发请求的租户()
+    {
+        var provider = BuildProvider();
+        var runner = provider.GetRequiredService<INexMeshBackgroundRunner>();
+        var accessor = provider.GetRequiredService<INexMeshContextAccessor>();
+
+        TenantHelper.Set("leaked-tenant"); // 模拟触发请求遗留的租户
+        try
+        {
+            string? tenantInside = "unset";
+            await runner.RunAsync(null, async (_, _) =>
+            {
+                tenantInside = TenantHelper.Current;
+                await Task.CompletedTask;
+            });
+
+            Assert.Null(tenantInside);                    // 任务内 fail-closed:读不到遗留租户
+            Assert.Null(accessor.Current);                // 身份槽不被伪造
+            Assert.Equal("leaked-tenant", TenantHelper.Current); // 任务结束后外部租户原样还原
+        }
+        finally
+        {
+            TenantHelper.Set(null);
+        }
+    }
 }

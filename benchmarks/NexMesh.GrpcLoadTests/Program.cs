@@ -12,7 +12,15 @@ using NexMesh.Core;
 using NexMesh.Host;
 using NexMesh.Core.DependencyInjection;
 
-// ═══ gRPC 契约网关 1000 万请求密集处理实测(进程内 InMemory channel,测网关自身) ═══
+// ═══ gRPC 契约网关实测(进程内 InMemory channel,测网关自身) ═══
+// 两种模式:args 无参 = 1000 万请求吞吐军演(默认);args[0]="latency" = 单通道顺序延迟分布(测热路径改造效果)
+var mode = args.Length > 0 ? args[0] : "load";
+if (mode == "latency")
+{
+    await LatencyBenchmark.RunAsync();
+    return;
+}
+
 const long TOTAL = 10_000_000;
 long issued_ = 0;
 int DEGREE = Environment.ProcessorCount * 2;
@@ -103,4 +111,53 @@ public class LoadService : ILoadApi, IScopedService
 
     public Task<string> EchoAsync(string message, int repeat)
         => Task.FromResult(string.Concat(Enumerable.Repeat(message, Math.Min(repeat, 8))));
+}
+
+/// <summary>单通道顺序延迟分布:隔离服务端热路径每调用成本(吞吐军演见默认模式)。</summary>
+internal static class LatencyBenchmark
+{
+    public static async Task RunAsync()
+    {
+        const int WARMUP = 2_000, TOTAL = 200_000;
+        var builder = WebApplication.CreateBuilder();
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        builder.Configuration["NexMesh:Contracts:AllowAnonymousByDefault"] = "true";
+        builder.WebHost.UseTestServer();
+        builder.Services.AddNexMesh();
+        builder.Services.AddNexMeshContracts(typeof(LoadService).Assembly);
+        builder.Services.AddNexMeshGrpc(typeof(LoadService).Assembly);
+        var app = builder.Build();
+        app.MapNexMeshGrpc();
+        await app.StartAsync();
+        var server = (TestServer)app.Services.GetRequiredService(typeof(Microsoft.AspNetCore.Hosting.Server.IServer));
+
+        using var channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions { HttpHandler = server.CreateHandler() });
+        var client = new NexMesh.Grpc.ContractGateway.ContractGatewayClient(channel);
+
+        // 预热(含首扫建索引/委托编译)
+        for (var i = 0; i < WARMUP; i++)
+        {
+            var reply = await client.InvokeAsync(new NexMesh.Grpc.ContractCall
+                { Service = "load", Method = "Calc", ArgsJson = """{"a":17,"b":25,"op":"+"}""" });
+            if (!reply.EnvelopeJson.Contains("\"data\":42")) throw new InvalidOperationException("预热载荷校验失败");
+        }
+
+        var samples = new long[TOTAL];
+        var call = new NexMesh.Grpc.ContractCall { Service = "load", Method = "Calc", ArgsJson = """{"a":17,"b":25,"op":"+"}""" };
+        for (var i = 0; i < TOTAL; i++)
+        {
+            var sw = Stopwatch.GetTimestamp();
+            var reply = await client.InvokeAsync(call);
+            samples[i] = Stopwatch.GetTimestamp() - sw;
+            if (!reply.EnvelopeJson.Contains("\"data\":42")) throw new InvalidOperationException($"载荷校验失败 @{i}");
+        }
+        await app.DisposeAsync();
+
+        Array.Sort(samples);
+        double Mean(long[] s) => s.Average() * 1_000_000.0 / Stopwatch.Frequency;
+        double Pct(long[] s, double p) => s[(int)Math.Min(s.Length - 1, s.Length * p)] * 1_000_000.0 / Stopwatch.Frequency;
+        Console.WriteLine($"机器: {Environment.ProcessorCount} 核 | 单通道顺序 {TOTAL:N0} 次 Calc(3 参数)");
+        Console.WriteLine($"mean={Mean(samples):F2}μs p50={Pct(samples, 0.50):F2}μs p95={Pct(samples, 0.95):F2}μs p99={Pct(samples, 0.99):F2}μs max={Pct(samples, 1.0):F2}μs");
+        Console.WriteLine($"吞吐(单通道顺序)={Stopwatch.Frequency / samples.Average():N0} req/s | 峰值堆 {GC.GetTotalMemory(false) / 1024.0 / 1024.0:F0} MB");
+    }
 }

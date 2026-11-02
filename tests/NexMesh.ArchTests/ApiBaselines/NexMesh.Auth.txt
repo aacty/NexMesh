@@ -359,7 +359,7 @@ namespace NexMesh.Auth.Oidc
     }
     public sealed class OidcIdpTokenService
     {
-        public OidcIdpTokenService(NexMesh.Auth.Oidc.OidcIdpOptions options) { }
+        public OidcIdpTokenService(NexMesh.Auth.Oidc.OidcIdpOptions options, System.TimeProvider? timeProvider = null) { }
         public object ExportPublicJwk() { }
         public string IssueAuthorizationCode(string clientId, string redirectUri, string challenge, string userId) { }
         public string IssueClientCredentials(string clientId) { }
