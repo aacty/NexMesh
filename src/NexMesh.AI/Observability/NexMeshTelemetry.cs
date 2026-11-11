@@ -25,6 +25,12 @@ internal sealed class TelemetryAIFunction(AIFunction inner, NexMeshRiskLevel ris
 
     public override string Description => inner.Description;
 
+    // SSS+业务实测修复(AiDemo 真模型发现):不转发则基类默认=空参数 schema,
+    // 模型看到的工具"无参"无法传参——遥测包装必须全量转发 inner 元数据。
+    public override System.Text.Json.JsonElement JsonSchema => inner.JsonSchema;
+
+    public override System.Text.Json.JsonElement? ReturnJsonSchema => inner.ReturnJsonSchema;
+
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments,
         CancellationToken cancellationToken)

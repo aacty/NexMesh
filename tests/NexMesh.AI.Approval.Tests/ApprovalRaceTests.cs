@@ -35,7 +35,7 @@ public class ApprovalRaceTests
         public static int ExecutionCount;
 
         [NexMeshTool("高危:竞态探针计数,每次真实执行 +1。高危写操作!", NexMeshRiskLevel.High)]
-        public Task<string> ProbeAsync(long amount)
+        public Task<string> RaceProbeAsync(long amount)
         {
             Interlocked.Increment(ref ExecutionCount);
             return Task.FromResult($"probe:{amount}");
@@ -89,7 +89,7 @@ public class ApprovalRaceTests
         var accessor = sp.GetRequiredService<INexMeshContextAccessor>();
         using (accessor.Enter(new NexMeshContext { UserId = "u-race", TenantId = "hosp-Z" }))
         {
-            await InvokeToolAsync(sp, "Probe", new { amount = 9 });
+            await InvokeToolAsync(sp, "RaceProbe", new { amount = 9 });
         }
         var store2 = sp.GetRequiredService<IApprovalStore>();
         var pending = Assert.Single(await store2.ListPendingAsync());

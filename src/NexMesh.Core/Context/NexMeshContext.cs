@@ -99,12 +99,32 @@ public static class TenantHelper
     {
         var previous = ContextSlots.Tenant.Value;
         ContextSlots.Tenant.Value = tenantId;
-        return new RestoreScope(previous);
+        return new RestoreScope(previous, tenantId);
     }
 
-    private sealed class RestoreScope(string? previous) : IDisposable
+    /// <summary>
+    /// 租户槽还原作用域(SSS+ 二轮修复,原 A4 实证缺口):
+    /// ① 幂等——双重 Dispose 第二次为 no-op(否则把陈旧快照二次写回,踩掉其间的新绑定);
+    /// ② 世代校验——Dispose 时若槽当前值 ≠ 本作用域设置的值(错序释放:活跃的后来者已改写槽),
+    /// 只摘除自己不还原,绝不把陈旧值覆盖新值。
+    /// </summary>
+    private sealed class RestoreScope(string? previous, string? setValue) : IDisposable
     {
-        public void Dispose() => ContextSlots.Tenant.Value = previous;
+        private int _disposed; // 0=活跃,1=已释放
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return; // 双重 Dispose 幂等
+            }
+            // 世代校验:槽值已被后来者改写(错序释放)时静默退场,不覆盖新值
+            if (!string.Equals(ContextSlots.Tenant.Value, setValue, StringComparison.Ordinal))
+            {
+                return;
+            }
+            ContextSlots.Tenant.Value = previous;
+        }
     }
 }
 
@@ -128,7 +148,7 @@ public sealed class AsyncLocalNexMeshContextAccessor : INexMeshContextAccessor
     {
         var previous = ContextSlots.Context.Value;
         ContextSlots.Context.Value = context;
-        return new RestoreScope(previous);
+        return new RestoreScope(previous, context);
     }
 
     /// <summary>双槽绑定(身份+租户):单作用域对象,Dispose 按嵌套逆序(租户→身份)还原先前值。
@@ -139,20 +159,48 @@ public sealed class AsyncLocalNexMeshContextAccessor : INexMeshContextAccessor
         var previousTenant = ContextSlots.Tenant.Value;
         ContextSlots.Context.Value = context;
         ContextSlots.Tenant.Value = context.TenantId;
-        return new DualRestoreScope(previousContext, previousTenant);
+        return new DualRestoreScope(previousContext, previousTenant, context);
     }
 
-    private sealed class RestoreScope(NexMeshContext? previous) : IDisposable
+    /// <summary>身份槽还原作用域(SSS+ 二轮修复):幂等(双重 Dispose no-op)+ 世代校验(错序释放不覆盖新值)。</summary>
+    private sealed class RestoreScope(NexMeshContext? previous, NexMeshContext setValue) : IDisposable
     {
-        public void Dispose() => ContextSlots.Context.Value = previous;
-    }
+        private int _disposed; // 0=活跃,1=已释放
 
-    private sealed class DualRestoreScope(NexMeshContext? previousContext, string? previousTenant) : IDisposable
-    {
         public void Dispose()
         {
-            ContextSlots.Tenant.Value = previousTenant;
-            ContextSlots.Context.Value = previousContext;
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return; // 双重 Dispose 幂等
+            }
+            // 世代校验:槽当前值是另一个绑定实例(等值不同引用也算新世代)时只摘除自己
+            if (!ReferenceEquals(ContextSlots.Context.Value, setValue))
+            {
+                return;
+            }
+            ContextSlots.Context.Value = previous;
+        }
+    }
+
+    /// <summary>双槽还原作用域(SSS+ 二轮修复):幂等 + 逐槽世代校验——任一槽被后来者改写时,该槽只摘除自己不覆盖新值。</summary>
+    private sealed class DualRestoreScope(NexMeshContext? previousContext, string? previousTenant, NexMeshContext setValue) : IDisposable
+    {
+        private int _disposed; // 0=活跃,1=已释放
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return; // 双重 Dispose 幂等
+            }
+            if (string.Equals(ContextSlots.Tenant.Value, setValue.TenantId, StringComparison.Ordinal))
+            {
+                ContextSlots.Tenant.Value = previousTenant;
+            }
+            if (ReferenceEquals(ContextSlots.Context.Value, setValue))
+            {
+                ContextSlots.Context.Value = previousContext;
+            }
         }
     }
 }
@@ -179,10 +227,17 @@ internal static class ContextSlotBinding
         return new CompositeScope(tenantScope, contextScope);
     }
 
+    /// <summary>组合作用域(SSS+ 二轮修复):幂等守卫;内层作用域自带世代校验,错序/重复释放不会覆盖新值。</summary>
     private sealed class CompositeScope(IDisposable tenantScope, IDisposable contextScope) : IDisposable
     {
+        private int _disposed; // 0=活跃,1=已释放
+
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return; // 双重 Dispose 幂等(内层作用域也被各自的世代守卫保护)
+            }
             tenantScope.Dispose(); // 嵌套逆序:租户先还原(与历史 using 嵌套一致)
             contextScope.Dispose();
         }

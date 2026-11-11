@@ -3,6 +3,7 @@ namespace NexMesh.Core.Middlewares;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -35,7 +36,11 @@ public class MeshExceptionMiddleware
             _logger.LogWarning(ex, "业务异常 {TraceId} {Method} {Path} -> {StatusCode}",
                 traceId, context.Request.Method, context.Request.Path, ex.StatusCode);
 
-            await WriteErrorAsync(context, BuildError(ex, traceId));
+            if (await InvokeHandlersAsync(context, ex, BuildError(ex, traceId)))
+            {
+                return; // IsTerminating 处理器已接管响应写出
+            }
+            await WriteErrorAsync(context, BuildError(ex, traceId), ex.StatusCode);
         }
         catch (Exception ex) when (!context.Response.HasStarted
                                    && ex is not OperationCanceledException)
@@ -45,7 +50,12 @@ public class MeshExceptionMiddleware
             _logger.LogError(ex, "未处理异常 {TraceId} {Method} {Path}",
                 traceId, context.Request.Method, context.Request.Path);
 
-            await WriteErrorAsync(context, ApiResult.Fail($"服务器内部错误(TraceId:{traceId})", 500));
+            var fallback = ApiResult.Fail($"服务器内部错误(TraceId:{traceId})", 50000);
+            if (await InvokeHandlersAsync(context, ex, fallback))
+            {
+                return;
+            }
+            await WriteErrorAsync(context, fallback, 500);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -66,13 +76,47 @@ public class MeshExceptionMiddleware
         }
     }
 
-    /// <summary>异常 → 错误信封:Code=HTTP 状态码;不可暴露的消息替换为通用文案;Validation 附 Errors。</summary>
+    /// <summary>消费 IMeshExceptionHandler 扩展点(SSS+三轮审核:此前全仓零消费=死扩展点)。
+    /// 业务注册的处理器按 Priority 升序执行;任一 IsTerminating=true 即视为已接管响应。</summary>
+    private async Task<bool> InvokeHandlersAsync(HttpContext context, Exception ex, ApiResult error)
+    {
+        var handlers = context.RequestServices.GetServices<IMeshExceptionHandler>()
+            .OrderBy(h => h.Priority)
+            .ToArray();
+        if (handlers.Length == 0)
+        {
+            return false;
+        }
+        var ctx = new ExceptionContext(context, ex, error);
+        var terminating = false;
+        foreach (var handler in handlers)
+        {
+            if (!handler.CanHandle(ex))
+            {
+                continue;
+            }
+            try
+            {
+                await handler.HandleAsync(ctx);
+                terminating |= handler.IsTerminating;
+            }
+            catch (Exception handlerEx)
+            {
+                // 处理器自身异常不掩盖原始异常,仅记录
+                _logger.LogError(handlerEx, "IMeshExceptionHandler {Handler} 自身异常", handler.GetType().Name);
+            }
+        }
+        return terminating;
+    }
+
+    /// <summary>异常 → 错误信封:Code=细粒度业务码 ErrorCode(与错误码参考文档对齐;
+    /// 未显式给码时 ErrorCode=(int)StatusCode,401/404/500 语义不变);Validation 附 Errors。</summary>
     internal static ApiResult BuildError(MeshException ex, string traceId)
     {
         var message = ex.ShouldExposeMessage
             ? ex.Message
             : $"服务器内部错误(TraceId:{traceId})";
-        var error = ApiResult.Fail(message, ex.StatusCode);
+        var error = ApiResult.Fail(message, ex.ErrorCode);
         error.TraceId = traceId;
         if (ex is ValidationException { Errors.Count: > 0 } validation)
         {
@@ -81,10 +125,10 @@ public class MeshExceptionMiddleware
         return error;
     }
 
-    private static async Task WriteErrorAsync(HttpContext context, ApiResult error)
+    private static async Task WriteErrorAsync(HttpContext context, ApiResult error, int statusCode)
     {
         context.Response.ContentType = "application/json";
-        context.Response.StatusCode = error.Code;
+        context.Response.StatusCode = statusCode; // HTTP 状态=ex.StatusCode;信封 Code=细粒度 ErrorCode(两者分离)
         await context.Response.WriteAsync(
             JsonSerializer.Serialize(error, JsonSerializerOptions.Web));
     }

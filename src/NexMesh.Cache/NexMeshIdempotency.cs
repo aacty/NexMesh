@@ -14,6 +14,10 @@ public class IdempotencyMiddleware
 {
     private readonly RequestDelegate _next;
     private static readonly TimeSpan LockTtl = TimeSpan.FromSeconds(30);
+    // SSS+交叉审核(L-F4):标准幂等 = 完成态响应回放——同 Key 重试在 TTL 窗口内拿到
+    // 与首次完全一致的响应(网络重试不再重复执行),而非重新执行。回放响应带 X-Idempotent-Replay 头。
+    // 5xx 不回放(服务端不确定态,重试应拿新鲜尝试);并发在途仍 409(40901)。
+    private static readonly TimeSpan ResponseTtl = TimeSpan.FromHours(24);
 
     public IdempotencyMiddleware(RequestDelegate next) => _next = next;
 
@@ -27,14 +31,31 @@ public class IdempotencyMiddleware
         }
 
         var cache = cacheFactory.Get();
-        var key = $"idem:{context.Request.Method}:{context.Request.Path}:{keyValues}";
-        await using var gate = await cache.TryLockAsync(key, LockTtl, context.RequestAborted);
+        var respKey = $"idem:resp:{context.Request.Method}:{context.Request.Path}:{keyValues}";
+
+        // ① 完成态检查:TTL 窗口内的重试直接回放首次响应
+        var stored = await cache.GetAsync<IdempotentResponse?>(respKey);
+        if (stored is not null)
+        {
+            await ReplayAsync(context, stored);
+            return;
+        }
+
+        var lockKey = $"idem:{context.Request.Method}:{context.Request.Path}:{keyValues}";
+        await using var gate = await cache.TryLockAsync(lockKey, LockTtl, context.RequestAborted);
         if (gate is null)
         {
+            // ② 竞态复查:持锁请求可能刚完成(检查与加锁之间)——能回放则回放,否则 409 在途
+            stored = await cache.GetAsync<IdempotentResponse?>(respKey);
+            if (stored is not null)
+            {
+                await ReplayAsync(context, stored);
+                return;
+            }
             context.Response.StatusCode = StatusCodes.Status409Conflict;
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsync(JsonSerializer.Serialize(
-                ApiResult<object>.Fail("重复请求处理中(Idempotency-Key 冲突)", 409), JsonSerializerOptions.Web));
+                ApiResult<object>.Fail("重复请求处理中(Idempotency-Key 冲突)", 40901), JsonSerializerOptions.Web));
             return;
         }
 
@@ -57,16 +78,46 @@ public class IdempotencyMiddleware
             }
         }, CancellationToken.None);
 
+        // ③ 响应缓冲:捕获完成响应 → 2xx/4xx 存回放窗;5xx 不存(重试拿新鲜尝试)
+        var originalBody = context.Response.Body;
+        await using var buffer = new MemoryStream();
+        context.Response.Body = buffer;
         try
         {
             await _next(context);
+            var status = context.Response.StatusCode;
+            var contentType = context.Response.ContentType;
+            context.Response.Body = originalBody;
+            buffer.Position = 0;
+            await buffer.CopyToAsync(originalBody, context.RequestAborted);
+
+            if (status < 500)
+            {
+                var bodyText = await new StreamReader(buffer.ToArray() is { } bytes ? new MemoryStream(bytes) : Stream.Null,
+                    System.Text.Encoding.UTF8).ReadToEndAsync();
+                await cache.SetAsync(respKey,
+                    new IdempotentResponse(status, contentType ?? "application/json", bodyText),
+                    ResponseTtl, context.RequestAborted);
+            }
         }
         finally
         {
+            context.Response.Body = originalBody;
             await renewal.CancelAsync();
             try { await renewTask; } catch (OperationCanceledException) { }
         }
     }
+
+    private static async Task ReplayAsync(HttpContext context, IdempotentResponse stored)
+    {
+        context.Response.Headers["X-Idempotent-Replay"] = "true";
+        context.Response.StatusCode = stored.Status;
+        context.Response.ContentType = stored.ContentType;
+        await context.Response.WriteAsync(stored.Body, context.RequestAborted);
+    }
+
+    /// <summary>完成态响应快照(回放窗内原样重放);public=缓存层 STJ 反序列化要求公开构造器。</summary>
+    public sealed record IdempotentResponse(int Status, string ContentType, string Body);
 }
 
 public static class NexMeshCacheServiceCollectionExtensions

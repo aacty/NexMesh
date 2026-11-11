@@ -15,7 +15,9 @@ public sealed class InMemorySemanticStore : ISemanticVectorStore
     public Task AddAsync(string scope, string key, float[] vector, string payload, TimeSpan? ttl = null, CancellationToken ct = default)
     {
         var expiresAt = ttl is { } t ? DateTime.Now.Add(t) : DateTime.MaxValue;
-        _entries[scope + key] = new Entry(vector, payload, expiresAt);
+        // SSS+交叉审核修复:存储键以 scope+"|" 为命名空间——匿名("")与租户条目在键空间硬隔离。
+        // 此前匿名 scope 无前缀过滤,匿名检索全表匹配租户条目(实证:匿名命中 hosp-A 缓存答案)。
+        _entries[$"{scope}|{key}"] = new Entry(vector, payload, expiresAt);
         return Task.CompletedTask;
     }
 
@@ -26,8 +28,9 @@ public sealed class InMemorySemanticStore : ISemanticVectorStore
         var now = DateTime.Now;
         foreach (var (key, entry) in _entries)
         {
-            // SSS+安全:仅匹配同 scope(租户前缀)条目,跨租户 PHI 串答在此截断
-            if (!string.IsNullOrEmpty(scope) && !key.StartsWith(scope, StringComparison.Ordinal))
+            // SSS+安全:仅匹配同 scope 命名空间条目(存储键=scope+"|"+key)——租户不串租户,
+            // 匿名("")也不读租户条目(修复:此前匿名无前缀过滤,全表匹配)
+            if (!key.StartsWith($"{scope}|", StringComparison.Ordinal))
             {
                 continue;
             }

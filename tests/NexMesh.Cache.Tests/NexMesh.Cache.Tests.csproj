@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NexMesh.Cache\NexMesh.Cache.csproj" />
+    <!-- L 轮交叉测试:迁移/缓存分布式锁真 Redis 攻击需要 RedisMigrationLock(位于 Data.FreeSql) -->
+    <ProjectReference Include="..\..\src\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -14,6 +16,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- 迁移 Runner 锁内异常释放测试:复用中央版本(与其他测试工程一致),非新增包 -->
+    <PackageReference Include="FreeSql.Provider.Sqlite" />
   </ItemGroup>
 
 </Project>

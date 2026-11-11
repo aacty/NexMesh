@@ -95,9 +95,35 @@ public static class ContractOpenApiDocument
                     continue;
                 }
                 var inRoute = endpoint.Route.Contains($"{{{param.Name}", StringComparison.Ordinal);
-                if (inRoute || !NexMesh.Core.AutoApi.AutoApiDispatcher.IsSimple(param.ParameterType))
+                if (inRoute)
                 {
-                    continue; // 路由参数已收集;复杂类型走请求体
+                    continue; // 路由参数已收集
+                }
+                // SSS+审核修复:简单集合参数(T[]/List<T>/HashSet<T> 元素为简单类型)= Query 绑定
+                // (逗号分隔/重复键),按 OpenAPI array 登记——此前被 IsSimple 判定跳过,参数从文档消失
+                if (NexMesh.Core.AutoApi.AutoApiDispatcher.IsSimpleCollection(param.ParameterType, out var elementType, out _))
+                {
+                    var collectionParam = new JsonObject
+                    {
+                        ["name"] = param.Name,
+                        ["in"] = "query",
+                        ["required"] = !param.HasDefaultValue,
+                        ["schema"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = schemaGen.Simple(elementType),
+                        },
+                    };
+                    if (summaries.TryGetValue($"{methodId}|param|{param.Name}", out var collectionDesc))
+                    {
+                        collectionParam["description"] = collectionDesc;
+                    }
+                    parameters.Add(collectionParam);
+                    continue;
+                }
+                if (!NexMesh.Core.AutoApi.AutoApiDispatcher.IsSimple(param.ParameterType))
+                {
+                    continue; // 复杂类型走请求体
                 }
                 var queryParam = new JsonObject
                 {

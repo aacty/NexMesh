@@ -243,8 +243,11 @@ public class DashboardNewPanelsTests
         var migrations = (await OverviewAsync(client)).GetProperty("migrations");
         Assert.True(migrations.GetProperty("enabled").GetBoolean());
         var list = migrations.GetProperty("migrations");
-        Assert.Equal(1, list.GetArrayLength());
-        Assert.Equal("面板演示迁移", list[0].GetProperty("name").GetString());
+        // H 第二轮交叉测试备案:本程序集新增 H 边界夹具(HDashboardOpsBoundaryTests.HBoundaryMigration)
+        // 也被 AddNexMeshMigrations 同程序集扫描注册,迁移记录数随之 >1——
+        // 断言由"恰好 1 条"调整为"包含面板演示迁移"(意图不变:已应用迁移必须上面板)
+        Assert.True(list.GetArrayLength() >= 1);
+        Assert.Contains(list.EnumerateArray(), m => m.GetProperty("name").GetString() == "面板演示迁移");
         await app.DisposeAsync();
     }
 

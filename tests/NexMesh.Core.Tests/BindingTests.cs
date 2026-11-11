@@ -42,7 +42,7 @@ public class BindingTests(TestApi api) : IClassFixture<TestApi>
 
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
         var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
-        Assert.Equal(400, json.GetProperty("code").GetInt32());
+        Assert.Equal(40001, json.GetProperty("code").GetInt32());
         Assert.Contains("JSON", json.GetProperty("message").GetString());
     }
 
@@ -53,6 +53,19 @@ public class BindingTests(TestApi api) : IClassFixture<TestApi>
 
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
         var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
-        Assert.Equal(400, json.GetProperty("code").GetInt32());
+        Assert.Equal(40001, json.GetProperty("code").GetInt32());
+    }
+
+    [Fact]
+    public async Task 数值超范围_返回400而非500()
+    {
+        // SSS+快路径审核锚定:OverflowException 与格式错误同为客户端输入错误——
+        // 修复前 int 超范围溢出异常未被捕获 → 500;快路径统一 40001/400
+        var response = await api.Client.PostAsync("/api/Demo/Get?id=99999999999999999999", content: null);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        Assert.Equal(40001, json.GetProperty("code").GetInt32());
+        Assert.Contains("Int32", json.GetProperty("message").GetString());
     }
 }

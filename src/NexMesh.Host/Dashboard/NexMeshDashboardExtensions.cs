@@ -99,13 +99,13 @@ public static class NexMeshDashboardExtensions
                 }
                 else if (byName.Count > 1)
                 {
-                    return Results.Ok(ApiResult<object?>.Fail(
-                        $"同名作业 {byName.Count} 个({string.Join(", ", byName.Select(h => h.GetType().FullName))}),请用类型全名触发", 400));
+                    return Results.Json(ApiResult<object?>.Fail(
+                        $"同名作业 {byName.Count} 个({string.Join(", ", byName.Select(h => h.GetType().FullName))}),请用类型全名触发", 400), statusCode: 400);
                 }
             }
             if (job is null)
             {
-                return Results.Ok(ApiResult<object?>.Fail($"未找到作业 {jobName}", 404));
+                return Results.Json(ApiResult<object?>.Fail($"未找到作业 {jobName}", 404), statusCode: 404);
             }
             // 反射取 TriggerNowAsync 执行(Worker 公共面;job 执行体走其内部闸)
             var trigger = job.GetType().GetMethod("TriggerNowAsync")
@@ -122,11 +122,11 @@ public static class NexMeshDashboardExtensions
             catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
             {
                 // 作业执行失败:降级信封(业务异常不外抛 500)
-                return Results.Ok(ApiResult<object?>.Fail($"执行失败:{tie.InnerException.Message}", 500));
+                return Results.Json(ApiResult<object?>.Fail($"执行失败:{tie.InnerException.Message}", 500), statusCode: 500);
             }
             catch (Exception ex)
             {
-                return Results.Ok(ApiResult<object?>.Fail($"执行失败:{ex.Message}", 500));
+                return Results.Json(ApiResult<object?>.Fail($"执行失败:{ex.Message}", 500), statusCode: 500);
             }
         });
         WithAuth(jobTrigger);
@@ -138,12 +138,21 @@ public static class NexMeshDashboardExtensions
             var factory = http.RequestServices.GetService<NexMesh.Cache.ICacheFactory>();
             if (factory is null)
             {
-                return Results.Ok(ApiResult<object?>.Fail("缓存未启用(AddNexMeshCache)", 400));
+                return Results.Json(ApiResult<object?>.Fail("缓存未启用(AddNexMeshCache)", 400), statusCode: 400);
             }
-            var cacheSource = factory.Get(source);
+            // SSS+交叉审核:未知源名 → 结构化 400(此前 InvalidOperationException 逃逸 → 500,运维不知源名写错)
+            NexMesh.Cache.ICacheSource cacheSource;
+            try
+            {
+                cacheSource = factory.Get(source);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(ApiResult<object?>.Fail(ex.Message, 400), statusCode: 400);
+            }
             if (cacheSource is not NexMesh.Cache.ICacheInspection inspection)
             {
-                return Results.Ok(ApiResult<object?>.Ok(new { keys = Array.Empty<object>() }));
+                return Results.Json(ApiResult<object?>.Ok(new { keys = Array.Empty<object>() }));
             }
             var keys = await inspection.ListKeysAsync(prefix ?? "", 200, ct);
             return Results.Ok(ApiResult<object?>.Ok(keys));
@@ -154,9 +163,18 @@ public static class NexMeshDashboardExtensions
             string source, string key, HttpContext http, CancellationToken ct) =>
         {
             var factory = http.RequestServices.GetService<NexMesh.Cache.ICacheFactory>();
-            if (factory?.Get(source) is not NexMesh.Cache.ICacheInspection inspection)
+            NexMesh.Cache.ICacheSource? cacheSource = null;
+            try
             {
-                return Results.Ok(ApiResult<object?>.Fail("该缓存源不支持键操作", 400));
+                cacheSource = factory?.Get(source);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(ApiResult<object?>.Fail(ex.Message, 400), statusCode: 400);
+            }
+            if (cacheSource is not NexMesh.Cache.ICacheInspection inspection)
+            {
+                return Results.Json(ApiResult<object?>.Fail("该缓存源不支持键操作", 400), statusCode: 400);
             }
             var removed = await inspection.RemoveKeyAsync(key, ct);
             return Results.Ok(ApiResult<object?>.Ok(new { removed }));
@@ -170,7 +188,7 @@ public static class NexMeshDashboardExtensions
             var runner = http.RequestServices.GetService<NexMesh.Data.Migrations.IMigrationRunner>();
             if (runner is null)
             {
-                return Results.Ok(ApiResult<object?>.Fail("迁移未启用(AddNexMeshMigrations)", 400));
+                return Results.Json(ApiResult<object?>.Fail("迁移未启用(AddNexMeshMigrations)", 400), statusCode: 400);
             }
             var applied = await runner.RunPendingAsync(ct);
             return Results.Ok(ApiResult<object?>.Ok(new { applied }));
@@ -183,7 +201,7 @@ public static class NexMeshDashboardExtensions
             var store = http.RequestServices.GetService<NexMesh.Auth.ISessionStore>();
             if (store is null)
             {
-                return Results.Ok(ApiResult<object?>.Fail("认证会话未启用", 400));
+                return Results.Json(ApiResult<object?>.Fail("认证会话未启用", 400), statusCode: 400);
             }
             var revoked = await store.RevokeByUserAsync(userId, ct);
             return Results.Ok(ApiResult<object?>.Ok(new { revoked }));
@@ -205,7 +223,7 @@ public static class NexMeshDashboardExtensions
             var decisions = http.RequestServices.GetService<NexMesh.AI.Approval.ApprovalDecisionService>();
             if (decisions is null)
             {
-                return Results.Ok(ApiResult<object?>.Fail("审批门未启用(AddNexMeshApproval)", 400));
+                return Results.Json(ApiResult<object?>.Fail("审批门未启用(AddNexMeshApproval)", 400), statusCode: 400);
             }
             var user = http.RequestServices.GetService<NexMesh.Core.ICurrentUser>();
             var decidedBy = user?.UserId ?? "operator";

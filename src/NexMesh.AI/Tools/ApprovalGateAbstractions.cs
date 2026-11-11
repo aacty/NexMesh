@@ -23,6 +23,12 @@ public sealed class ApprovalRequiredAIFunction(AIFunction rawFunction, IToolAppr
 
     public override string Description => rawFunction.Description;
 
+    // SSS+业务实测修复(AiDemo 真模型发现):不转发 JsonSchema 时基类默认=空参数对象,
+    // 审批启用后所有高危工具对模型"无参"——真模型无法传参。全部元数据转发 raw。
+    public override System.Text.Json.JsonElement JsonSchema => rawFunction.JsonSchema;
+
+    public override System.Text.Json.JsonElement? ReturnJsonSchema => rawFunction.ReturnJsonSchema;
+
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments,
         CancellationToken cancellationToken)

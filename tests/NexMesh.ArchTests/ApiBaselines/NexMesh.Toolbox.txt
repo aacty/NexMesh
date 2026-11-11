@@ -1,0 +1,93 @@
+namespace NexMesh.Toolbox
+{
+    public sealed class DbFileStorage : NexMesh.Toolbox.IFileStorage
+    {
+        public DbFileStorage(IFreeSql db, NexMesh.Core.ICurrentUser? user) { }
+        public System.Threading.Tasks.Task<bool> DeleteAsync(string id, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<System.ValueTuple<System.IO.Stream, NexMesh.Toolbox.FileMetadata>?> OpenAsync(string id, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<NexMesh.Toolbox.FileMetadata> SaveAsync(System.IO.Stream content, string name, string? contentType = null, System.Threading.CancellationToken ct = default) { }
+    }
+    public sealed class FileMetadata : System.IEquatable<NexMesh.Toolbox.FileMetadata>
+    {
+        public FileMetadata(string Id, string Name, string? ContentType, long Length, System.DateTime CreateTime) { }
+        public string? ContentType { get; init; }
+        public System.DateTime CreateTime { get; init; }
+        public string Id { get; init; }
+        public long Length { get; init; }
+        public string Name { get; init; }
+    }
+    public interface IEmailSender
+    {
+        System.Threading.Tasks.Task SendAsync(string subject, string body, System.Collections.Generic.IEnumerable<string> to, bool isBodyHtml = false, System.Threading.CancellationToken ct = default);
+    }
+    public interface IFileStorage
+    {
+        System.Threading.Tasks.Task<bool> DeleteAsync(string id, System.Threading.CancellationToken ct = default);
+        [return: System.Runtime.CompilerServices.TupleElementNames(new string[] {
+                "Content",
+                "Metadata"})]
+        System.Threading.Tasks.Task<System.ValueTuple<System.IO.Stream, NexMesh.Toolbox.FileMetadata>?> OpenAsync(string id, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<NexMesh.Toolbox.FileMetadata> SaveAsync(System.IO.Stream content, string name, string? contentType = null, System.Threading.CancellationToken ct = default);
+    }
+    public sealed class LocalFileStorage : NexMesh.Toolbox.IFileStorage
+    {
+        public LocalFileStorage(string directory) { }
+        public System.Threading.Tasks.Task<bool> DeleteAsync(string id, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<System.ValueTuple<System.IO.Stream, NexMesh.Toolbox.FileMetadata>?> OpenAsync(string id, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<NexMesh.Toolbox.FileMetadata> SaveAsync(System.IO.Stream content, string name, string? contentType = null, System.Threading.CancellationToken ct = default) { }
+    }
+    public static class Masking
+    {
+        public static string? Email(string? email) { }
+        public static string? IdCard(string? id) { }
+        public static string? Name(string? name) { }
+        public static string? Phone(string? phone) { }
+    }
+    public sealed class NexMeshEmailOptions
+    {
+        public NexMeshEmailOptions() { }
+        public bool EnableSsl { get; set; }
+        public string From { get; set; }
+        public string Host { get; set; }
+        public string? Password { get; set; }
+        public int Port { get; set; }
+        public string? UserName { get; set; }
+    }
+    public static class NexMeshExcel
+    {
+        public static System.Threading.Tasks.Task ExportAsync<T>(System.IO.Stream output, System.Collections.Generic.IEnumerable<T> rows, System.Threading.CancellationToken ct = default) { }
+        public static System.Threading.Tasks.Task<System.Collections.Generic.List<T>> ImportAsync<T>(System.IO.Stream input, System.Threading.CancellationToken ct = default)
+            where T :  class, new () { }
+    }
+    [FreeSql.DataAnnotations.Table(Name="nexmesh_files")]
+    public class NexMeshFileEntity : NexMesh.Data.IAudited, NexMesh.Data.ISoftDelete, NexMesh.Data.IUserAudited
+    {
+        public NexMeshFileEntity() { }
+        [FreeSql.DataAnnotations.Column(StringLength=-1)]
+        public byte[] Content { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=256)]
+        public string? ContentType { get; set; }
+        public System.DateTime CreateTime { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=128)]
+        public string? CreateUserId { get; set; }
+        [FreeSql.DataAnnotations.Column(IsPrimary=true, StringLength=64)]
+        public string Id { get; set; }
+        public bool IsDeleted { get; set; }
+        public long Length { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=512)]
+        public string Name { get; set; }
+        public System.DateTime? UpdateTime { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=128)]
+        public string? UpdateUserId { get; set; }
+    }
+    public static class NexMeshToolboxExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshEmail(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration) { }
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshFileStorage(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration) { }
+    }
+    public sealed class SmtpEmailSender : NexMesh.Toolbox.IEmailSender
+    {
+        public SmtpEmailSender(NexMesh.Toolbox.NexMeshEmailOptions options) { }
+        public System.Threading.Tasks.Task SendAsync(string subject, string body, System.Collections.Generic.IEnumerable<string> to, bool isBodyHtml = false, System.Threading.CancellationToken ct = default) { }
+    }
+}

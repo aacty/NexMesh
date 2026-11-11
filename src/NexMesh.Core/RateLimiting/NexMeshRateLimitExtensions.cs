@@ -47,6 +47,16 @@ public static class NexMeshRateLimitServiceCollectionExtensions
     {
         var policies = new Dictionary<string, NexMeshRateLimitPolicyOptions>(StringComparer.Ordinal);
         configuration.GetSection("NexMesh:RateLimit:Policies").Bind(policies);
+        // SSS+交叉审核:策略名含冒号会被 IConfiguration 拆成层级——Bind 后字典键只剩冒号前段
+        //(如 "api:write" → 键 "api"),端点 [EnableRateLimiting("api:write")] 与注册名失配,首请求 500。
+        // 与其静默失配,不如注册期 fail-fast 让小白立刻看到错在哪。
+        var colonNamed = policies.Keys.Where(k => k.Contains(':')).ToArray();
+        if (colonNamed.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"[NexMesh 限流] 策略名不可含冒号({string.Join(", ", colonNamed.Select(k => "NexMesh:RateLimit:Policies:" + k))}):" +
+                "冒号会被 IConfiguration 当作层级分隔符静默截断,请改用短横线(如 api-write)。");
+        }
 
         var marker = new NexMeshRateLimitMarker();
         foreach (var name in policies.Keys)

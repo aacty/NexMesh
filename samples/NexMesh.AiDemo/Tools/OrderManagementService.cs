@@ -13,7 +13,7 @@ public static class OrderManagementService
     public static Task<string> QueryOrderAsync(string orderId)
         => Task.FromResult($"订单 {orderId} 状态:已发货,物流单号 SF1009281。");
 
-    [NexMeshTool("对指定订单执行管理员强制关闭。高危写操作!", NexMeshRiskLevel.High)]
+    [NexMeshTool("对指定订单执行管理员强制关闭。高危写操作!审批门启用时,调用本工具不会直接执行,而是自动进入人工审批队列并返回审批单号。", NexMeshRiskLevel.High)]
     public static Task<string> ForceCloseOrderAsync(string orderId, string reason)
         => Task.FromResult($"订单 {orderId} 已强制关闭:{reason}");
 }

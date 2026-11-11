@@ -34,8 +34,11 @@ public interface INexMeshToolRegistry
 /// 静态方法经委托直调;实例方法(一等公民)每次调用从独立 DI 作用域解析实例。
 /// 安全铁律:High 风险工具——审批门(NexMesh:AI:Approval:Enabled=false,默认)未启用时发现即抛异常阻断启动;
 /// 启用且容器注册了 IToolApprovalEnqueue(NexMesh.AI.Approval 包)时包装为挂起拦截。
+/// 同名工具 fail-fast:两个 [NexMeshTool] 方法映射到同一工具名(方法同名,或去 Async 后缀后同名,
+/// 或仅大小写不同——注册表按 OrdinalIgnoreCase 查找)时,注册即抛 NotSupportedException,
+/// 绝不允许"后注册者静默劫持"同名工具(静默覆盖会让模型调到错误实现,且审批/遥测包装指向错误探针)。
 /// MaxToolsPerRequest(NexMesh:AI:MaxToolsPerRequest,默认 10)超限截断,防千级工具 Prompt 膨胀。
-/// services == null 时为验证模式:仅执行安全门与元数据校验,不产出实例工具。
+/// services == null 时为验证模式:仅执行安全门与元数据校验,不产出实例工具(实例工具名占用仍登记,同名冲突在启动期即暴露)。
 /// </summary>
 public class NexMeshToolRegistry : INexMeshToolRegistry
 {
@@ -44,6 +47,7 @@ public class NexMeshToolRegistry : INexMeshToolRegistry
     private readonly IServiceProvider? _services;
     private readonly bool _approvalEnabled;
     private readonly ConcurrentDictionary<string, AIFunction> _rawFunctions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _toolOwners = new(StringComparer.OrdinalIgnoreCase);
 
     public NexMeshToolRegistry(IConfiguration configuration, params Assembly[] assemblies)
         : this(configuration, services: null, assemblies)
@@ -109,6 +113,7 @@ public class NexMeshToolRegistry : INexMeshToolRegistry
 
                 if (raw is not null)
                 {
+                    RegisterToolName(raw.Name, m);
                     _rawFunctions[raw.Name] = raw;
 
                     if (attr.Risk == NexMeshRiskLevel.High)
@@ -133,11 +138,42 @@ public class NexMeshToolRegistry : INexMeshToolRegistry
 
                     functions.Add(new TelemetryAIFunction(raw, attr.Risk, logger));
                 }
+                else if (_services is null)
+                {
+                    // 验证模式:实例工具不产出实例,但名字占用照常登记——
+                    // 同名冲突(含去 Async 后缀后同名)在启动期即暴露,而非等到运行期首次发现。
+                    RegisterToolName(TrimAsyncSuffix(m.Name), m);
+                }
             }
         }
 
         return functions;
     }
+
+    /// <summary>
+    /// 工具名占用登记与同名 fail-fast:同一注册表实例内,两个不同方法映射到同一工具名即抛。
+    /// 同一方法重复发现(同一注册表多次 DiscoverAllTools/DiscoverTools,如审批测试逐次调用)按幂等处理。
+    /// 注意 AIFunctionFactory 与 InstanceToolAIFunction 均对 Task/ValueTask 方法去 "Async" 后缀,
+    /// 因此 DoX 与 DoXAsync 会映射到同一工具名,同样判为冲突。
+    /// </summary>
+    private void RegisterToolName(string toolName, MethodInfo method)
+    {
+        var owner = $"{method.DeclaringType!.FullName}.{method.Name}({string.Join(", ", method.GetParameters().Select(p => p.ParameterType.FullName ?? p.ParameterType.Name))})";
+        var registered = _toolOwners.GetOrAdd(toolName, owner);
+        if (!string.Equals(registered, owner, StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"[NexMesh Tool Registry] Duplicate tool name '{toolName}': " +
+                $"'{registered}' 与 '{owner}' 映射到同一工具名。同名工具(含去 Async 后缀后同名、仅大小写不同)禁止注册," +
+                "后注册者会静默劫持同名工具——请为 [NexMeshTool] 方法改名以消除冲突。");
+        }
+    }
+
+    /// <summary>与 InstanceToolAIFunction 的实例工具命名规则保持一致(验证模式登记用)。</summary>
+    private static string TrimAsyncSuffix(string name) =>
+        name.EndsWith("Async", StringComparison.Ordinal) && name.Length > "Async".Length + 1
+            ? name[..^"Async".Length]
+            : name;
 
     private static NotSupportedException SecurityGate(MethodInfo m) => new(
         $"[NexMesh Security Gate] Tool '{m.Name}' is marked as High risk. " +

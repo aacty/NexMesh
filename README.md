@@ -5,7 +5,7 @@
 **你只写业务逻辑,框架处理其余一切**
 
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](https://dotnet.microsoft.com)
-[![Tests](https://img.shields.io/badge/tests-211%20passed-brightgreen?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-307%20passed-brightgreen?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
 [![Packages](https://img.shields.io/badge/NuGet-0.0.4-purple?style=flat-square)](https://www.nuget.org/packages?q=NexMesh)
 
@@ -234,7 +234,7 @@ NexMesh.Host               ← 业务项目只引这一个
 | Events | 进程内事件总线 | 无 |
 | Worker | Cron/间隔作业 | Cronos |
 | Toolbox | Excel/文件/邮件/脱敏 | MiniExcel |
-| Host | 一行总装 | 引上面全部 |
+| Host | 一行总装 | 传递装配核心 7 包(总装/AI/审批/认证/数据/缓存/事件);Worker/Toolbox/语义缓存/工作流按需另引 |
 
 ---
 
@@ -271,7 +271,7 @@ NexMesh.Host               ← 业务项目只引这一个
 | 20 | 进程内事件总线 | Events |
 | 21 | 依赖规则测试 + 公共 API 基线 | tests/NexMesh.ArchTests |
 | 22 | 性能基准 | benchmarks/NexMesh.Benchmarks |
-| 23 | 框架管理台(能力探测:概览/AI/审批/作业/事件) | Host |
+| 23 | 框架管理台(能力探测:概览/AI/审批/作业/事件/迁移/缓存/会话) | Host |
 | 24 | OIDC 外部 IdP 对接(token-exchange) | Auth |
 | 25 | 自建 OIDC IdP(授权码+PKCE / 发现文档 / JWKS) | Auth |
 | 26 | 数据库 SQL 迁移(分布式锁,并入 Data.FreeSql) | Data.FreeSql |
@@ -319,7 +319,7 @@ NexMesh.Host               ← 业务项目只引这一个
 | 弹性 | Polly 8.8 |
 | 调度 | Cronos 0.13 |
 | Excel | MiniExcel 1.46 |
-| 测试 | xUnit 2.9(211 项 + 依赖规则/API 基线/性能基准) |
+| 测试 | xUnit 2.9(307 项 + 依赖规则/API 基线/性能基准) |
 
 ---
 

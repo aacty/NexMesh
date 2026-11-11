@@ -86,6 +86,16 @@ public sealed class NexMeshTokenAuthHandler(
         await Response.WriteAsync(JsonSerializer.Serialize(
             ApiResult<object>.Fail(message, 401), JsonSerializerOptions.Web));
     }
+
+    /// <summary>SSS+交叉审核修复:字面量模式角色不足统一 403 信封——此前空 body,违背
+    /// "所有响应以 ApiResult 信封返回"的文档承诺(网关模式 403 有信封)。</summary>
+    protected override async Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        Response.ContentType = "application/json";
+        await Response.WriteAsync(JsonSerializer.Serialize(
+            ApiResult<object>.Fail("权限不足(角色校验未通过)", 403), JsonSerializerOptions.Web));
+    }
 }
 
 public static class NexMeshAuthAppExtensions

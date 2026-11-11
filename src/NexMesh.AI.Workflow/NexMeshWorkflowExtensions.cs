@@ -63,6 +63,17 @@ public sealed class FreeSqlCheckpointStore(IFreeSql db) : IWorkflowCheckpointSto
         return affected > 0;
     }
 
+    /// <summary>CAS:Running→Suspended 条件更新(陈旧恢复专用),只改状态列、不写回旧快照。</summary>
+    public async Task<bool> TryMarkSuspendedAsync(string workflowId)
+    {
+        await _tableSync.Value;
+        var affected = await db.Update<CheckpointEntity>()
+            .Set(c => c.OverallStatus, StepStatus.Suspended)
+            .Where(c => c.WorkflowId == workflowId && c.OverallStatus == StepStatus.Running)
+            .ExecuteAffrowsAsync();
+        return affected > 0;
+    }
+
     [FreeSql.DataAnnotations.Table(Name = "nexmesh_workflow_checkpoints")]
     public class CheckpointEntity
     {

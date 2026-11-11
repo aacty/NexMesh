@@ -1,0 +1,41 @@
+namespace NexMesh.Worker
+{
+    public sealed class JobRunRecord : System.IEquatable<NexMesh.Worker.JobRunRecord>
+    {
+        public JobRunRecord(System.DateTimeOffset StartedAt, System.DateTimeOffset FinishedAt, bool Ok, string? Error, string Trigger, string? TriggeredBy) { }
+        public long DurationMs { get; }
+        public string? Error { get; init; }
+        public System.DateTimeOffset FinishedAt { get; init; }
+        public bool Ok { get; init; }
+        public System.DateTimeOffset StartedAt { get; init; }
+        public string Trigger { get; init; }
+        public string? TriggeredBy { get; init; }
+    }
+    public abstract class NexMeshCronJob : Microsoft.Extensions.Hosting.BackgroundService
+    {
+        protected NexMeshCronJob(string cronExpression, bool runOnStart = false, bool includeSeconds = false, System.IServiceProvider? provider = null, Microsoft.Extensions.Logging.ILogger? logger = null) { }
+        protected virtual NexMesh.Core.Context.NexMeshContext? ContextSnapshot { get; }
+        public string JobName { get; }
+        public System.Collections.Generic.IReadOnlyList<NexMesh.Worker.JobRunRecord> RecentRuns { get; }
+        protected override System.Threading.Tasks.Task ExecuteAsync(System.Threading.CancellationToken stoppingToken) { }
+        protected abstract System.Threading.Tasks.Task RunOnceAsync(System.IServiceProvider scoped, System.Threading.CancellationToken ct);
+        public System.Threading.Tasks.Task<bool> TriggerNowAsync(string? triggeredBy = null, System.Threading.CancellationToken ct = default) { }
+    }
+    public abstract class NexMeshIntervalJob : Microsoft.Extensions.Hosting.BackgroundService
+    {
+        protected NexMeshIntervalJob(System.TimeSpan interval, System.IServiceProvider? provider = null) { }
+        protected virtual NexMesh.Core.Context.NexMeshContext? ContextSnapshot { get; }
+        public string JobName { get; }
+        public System.Collections.Generic.IReadOnlyList<NexMesh.Worker.JobRunRecord> RecentRuns { get; }
+        protected override System.Threading.Tasks.Task ExecuteAsync(System.Threading.CancellationToken stoppingToken) { }
+        protected abstract System.Threading.Tasks.Task RunOnceAsync(System.IServiceProvider scoped, System.Threading.CancellationToken ct);
+        public System.Threading.Tasks.Task<bool> TriggerNowAsync(string? triggeredBy = null, System.Threading.CancellationToken ct = default) { }
+    }
+    public static class NexMeshWorkerExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshCronJob<TJob>(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, string cron, bool runOnStart = false)
+            where TJob : NexMesh.Worker.NexMeshCronJob { }
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshIntervalJob<TJob>(this Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+            where TJob : NexMesh.Worker.NexMeshIntervalJob { }
+    }
+}

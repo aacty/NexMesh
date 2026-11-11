@@ -206,3 +206,46 @@ public class CacheBenchmarks
     public async Task<string?> 防击穿读()
         => await _source.GetOrCreateAsync("goc", TimeSpan.FromSeconds(30), _ => Task.FromResult<string?>("built"));
 }
+
+// ═══════════════ 基准 7:契约参数转换(快路径 vs TypeDescriptor) ═══════════════
+
+/// <summary>ConvertSimple 热路径对比(int/Guid 各一组,基线=TypeDescriptor 旧路径)。</summary>
+[MemoryDiagnoser]
+public class BindConvertIntBenchmarks
+{
+    private static System.Reflection.ParameterInfo ParamOf<T>(string name)
+        => typeof(BindConvertIntBenchmarks).GetMethod(nameof(ParamHolder), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .MakeGenericMethod(typeof(T)).GetParameters()![0];
+
+    private static void ParamHolder<T>(T p) { }
+
+    private static readonly System.Reflection.ParameterInfo IntParam = ParamOf<int>("a");
+    private const string IntRaw = "123456";
+
+    [Benchmark(Baseline = true)]
+    public object? 旧路径_int_TypeDescriptor()
+        => System.ComponentModel.TypeDescriptor.GetConverter(typeof(int)).ConvertFromInvariantString(IntRaw);
+
+    [Benchmark]
+    public object? 快路径_int() => NexMesh.Core.AutoApi.AutoApiDispatcher.ConvertSimple(IntRaw, IntParam);
+}
+
+[MemoryDiagnoser]
+public class BindConvertGuidBenchmarks
+{
+    private static System.Reflection.ParameterInfo ParamOf<T>(string name)
+        => typeof(BindConvertGuidBenchmarks).GetMethod(nameof(ParamHolder), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .MakeGenericMethod(typeof(T)).GetParameters()![0];
+
+    private static void ParamHolder<T>(T p) { }
+
+    private static readonly System.Reflection.ParameterInfo GuidParam = ParamOf<Guid>("g");
+    private const string GuidRaw = "d4a3b2c1-1111-2222-3333-444455556666";
+
+    [Benchmark(Baseline = true)]
+    public object? 旧路径_Guid_TypeDescriptor()
+        => System.ComponentModel.TypeDescriptor.GetConverter(typeof(Guid)).ConvertFromInvariantString(GuidRaw);
+
+    [Benchmark]
+    public object? 快路径_Guid() => NexMesh.Core.AutoApi.AutoApiDispatcher.ConvertSimple(GuidRaw, GuidParam);
+}

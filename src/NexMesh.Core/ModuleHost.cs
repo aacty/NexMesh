@@ -81,9 +81,14 @@ public sealed class NexMeshBuilder(IServiceCollection services, IConfiguration c
 
     public List<INexMeshModule> Modules { get; } = [];
 
-    /// <summary>挂载模块(单例实例)。</summary>
+    /// <summary>挂载模块(单例实例):同类型只保留一份,与 AutoScanModules 去重语义一致,防重复装配双执行。</summary>
     public NexMeshBuilder AddModule(INexMeshModule module)
     {
+        if (Modules.Any(m => m.GetType() == module.GetType()))
+        {
+            return this;
+        }
+
         Modules.Add(module);
         return this;
     }

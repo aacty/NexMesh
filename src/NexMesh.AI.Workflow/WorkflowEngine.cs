@@ -43,6 +43,12 @@ public sealed class StepContext(IServiceProvider scoped)
         }
         if (value is System.Text.Json.JsonElement element)
         {
+            // 显式 null(initialData 显式写入 null 或上游步骤输出 null)→ 返回默认值,
+            // 而非对值类型 Deserialize("null") 抛裸 JsonException
+            if (element.ValueKind == System.Text.Json.JsonValueKind.Null)
+            {
+                return default;
+            }
             return System.Text.Json.JsonSerializer.Deserialize<T>(element.GetRawText());
         }
         try
@@ -108,6 +114,13 @@ public interface IWorkflowCheckpointStore
     /// 杜绝 HITL 步骤重复执行。返回 false = 已被他人恢复/状态不符(调用方回 409)。
     /// </summary>
     Task<bool> TryMarkRunningAsync(string workflowId, DateTime resumedAt);
+
+    /// <summary>
+    /// 原子状态转换 Running→Suspended(CAS,陈旧恢复专用):仅当存储侧此刻仍为 Running 才转换,
+    /// 且只改状态字段、基于存储当前记录——不写回调用方预读的旧快照,
+    /// 杜绝"预读后被并发推进(恢复/完成)却整行覆盖"的丢失更新回退。
+    /// </summary>
+    Task<bool> TryMarkSuspendedAsync(string workflowId);
 }
 
 /// <summary>内存检查点存储(开发/测试)。</summary>
@@ -147,6 +160,21 @@ public sealed class InMemoryCheckpointStore : IWorkflowCheckpointStore
                 return Task.FromResult(false);
             }
             _store[workflowId] = current with { OverallStatus = StepStatus.Running, ResumedAt = resumedAt };
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> TryMarkSuspendedAsync(string workflowId)
+    {
+        lock (_lock)
+        {
+            if (!_store.TryGetValue(workflowId, out var current)
+                || current.OverallStatus != StepStatus.Running)
+            {
+                return Task.FromResult(false);
+            }
+            // 基于 store 当前记录只改状态:即使预读后已被并发推进,这里也不会回退 index/DataJson
+            _store[workflowId] = current with { OverallStatus = StepStatus.Suspended };
             return Task.FromResult(true);
         }
     }
@@ -212,8 +240,12 @@ public sealed class NexMeshWorkflowEngine(
     }
 
     /// <summary>
-    /// 2g:恢复卡死的 Running 检查点(进程崩溃于执行中途)→ 原子回退为 Suspended,
+    /// 2g:恢复卡死的 Running 检查点(进程崩溃于执行中途)→ 原子转为 Suspended,
     /// 之后可走 ResumeAsync 正常续跑。仅 Running 状态可转换。
+    /// 落盘走 CAS(TryMarkSuspendedAsync):预读仅用于快速失败,真正的转换基于存储当前状态
+    /// 条件写——预读后被并发恢复推进/完成的检查点不会被本方法的旧快照整行覆盖(丢失更新回退)。
+    /// 注意:无租约机制,对仍在活跃执行的工作流调用本方法仍可能造成双执行(操作面纪律:仅对确认死亡
+    /// 的进程使用);框架在此只保证不回退已推进的检查点。
     /// </summary>
     public async Task<bool> RecoverStaleAsync(string workflowId)
     {
@@ -222,8 +254,7 @@ public sealed class NexMeshWorkflowEngine(
         {
             return false;
         }
-        await store.SaveAsync(checkpoint with { OverallStatus = StepStatus.Suspended });
-        return true;
+        return await store.TryMarkSuspendedAsync(workflowId);
     }
 
     /// <summary>2f:序列化失败给出带上下文的 MeshException,而非裸 JsonException。</summary>
@@ -240,10 +271,43 @@ public sealed class NexMeshWorkflowEngine(
         }
     }
 
+    /// <summary>
+    /// 步骤间数据落盘(不抛版):序列化失败时保留上一保存点的 DataJson 并返回诊断,
+    /// 让调用方仍能把状态转换(Suspended/Failed)持久化——原实现此处直接抛 MeshException,
+    /// 会吞掉失败分支的原始异常且终态不落盘。
+    /// </summary>
+    private static (string Json, string? Error) SerializeData(
+        Dictionary<string, object?> data, WorkflowCheckpoint checkpoint, string stepName)
+    {
+        try
+        {
+            return (System.Text.Json.JsonSerializer.Serialize(data), null);
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
+        {
+            return (checkpoint.DataJson,
+                $"步骤 {stepName} 输出不可 JSON 序列化({ex.GetType().Name}),检查点数据停留在上一保存点");
+        }
+    }
+
+    private static Dictionary<string, object?> DeserializeData(WorkflowCheckpoint checkpoint)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(checkpoint.DataJson) ?? [];
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            // 检查点数据损坏(手写库/版本迁移)→ 带上下文的 MeshException,而非裸 JsonException
+            throw new MeshException(
+                $"工作流 {checkpoint.WorkflowName} 的检查点数据损坏(DataJson 非 JSON:{ex.Message}),拒绝恢复", 50005, 500);
+        }
+    }
+
     private async Task<WorkflowCheckpoint> ExecuteFromAsync(
         WorkflowCheckpoint checkpoint, List<NexMeshWorkflowStep> steps, CancellationToken ct, bool isResumed = false)
     {
-        var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(checkpoint.DataJson) ?? [];
+        var data = DeserializeData(checkpoint);
         var context = NexMeshContext.FromMessageHeaders(checkpoint.ContextHeaders);
 
         while (checkpoint.CurrentStepIndex < steps.Count)
@@ -275,14 +339,51 @@ public sealed class NexMeshWorkflowEngine(
                 status = captured;
                 isResumed = false; // 恢复轮只标记一次(当前挂起步骤);后续步骤为首次执行
             }
+            catch (OperationCanceledException ex)
+            {
+                // 取消 ≠ 失败:执行器已停,但流程未否定自身——以挂起落盘(取消前已算出的
+                // 部分输出随 DataJson 持久化),宿主停机/调用方取消后可 RecoverStale→Resume 续跑;
+                // 原实现落进通用 catch 标为 Failed 终态,长流程随一次停机全部死亡。
+                logger?.LogWarning(ex, "工作流 {Workflow} 步骤 {Step} 被取消", checkpoint.WorkflowName, step.Name);
+                var (canceledJson, canceledError) = SerializeData(data, checkpoint, step.Name);
+                checkpoint = checkpoint with
+                {
+                    OverallStatus = StepStatus.Suspended,
+                    LastError = $"步骤 {step.Name} 执行被取消({ex.GetType().Name}),已挂起可恢复"
+                        + (canceledError is null ? "" : $";{canceledError}"),
+                    DataJson = canceledJson,
+                };
+                await store.SaveAsync(checkpoint);
+                return checkpoint;
+            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "工作流 {Workflow} 步骤 {Step} 失败", checkpoint.WorkflowName, step.Name);
+                var (failedJson, failedError) = SerializeData(data, checkpoint, step.Name);
                 checkpoint = checkpoint with
                 {
                     OverallStatus = StepStatus.Failed,
-                    LastError = ex.Message,
-                    DataJson = SerializeSafe(data, checkpoint.WorkflowName, $"步骤 {step.Name} 输出"),
+                    LastError = failedError is null ? ex.Message : $"{ex.Message};{failedError}",
+                    DataJson = failedJson,
+                };
+                await store.SaveAsync(checkpoint);
+                return checkpoint;
+            }
+
+            // 状态机门禁:步骤自述结局仅 Completed/Skipped/Suspended 合法;
+            // 返回 Failed/Pending/Running/未定义枚举值一律按失败拒绝推进(防静默假完成)
+            if (status is not (StepStatus.Completed or StepStatus.Skipped or StepStatus.Suspended))
+            {
+                logger?.LogError(
+                    "工作流 {Workflow} 步骤 {Step} 返回非法状态 {Status},拒绝推进",
+                    checkpoint.WorkflowName, step.Name, status);
+                var (illegalJson, illegalError) = SerializeData(data, checkpoint, step.Name);
+                checkpoint = checkpoint with
+                {
+                    OverallStatus = StepStatus.Failed,
+                    LastError = $"步骤 {step.Name} 返回非法状态 {status}(仅 Completed/Skipped/Suspended 合法),拒绝推进"
+                        + (illegalError is null ? "" : $";{illegalError}"),
+                    DataJson = illegalJson,
                 };
                 await store.SaveAsync(checkpoint);
                 return checkpoint;
@@ -290,21 +391,34 @@ public sealed class NexMeshWorkflowEngine(
 
             if (status == StepStatus.Suspended)
             {
-                // HITL 挂起:持久化当前进度,等待人工恢复
+                // HITL 挂起:持久化当前进度(含挂起前已写入的部分输出),等待人工恢复
+                var (suspendedJson, suspendedError) = SerializeData(data, checkpoint, step.Name);
                 checkpoint = checkpoint with
                 {
                     OverallStatus = StepStatus.Suspended,
-                    DataJson = SerializeSafe(data, checkpoint.WorkflowName, $"步骤 {step.Name} 输出"),
+                    LastError = suspendedError is null ? checkpoint.LastError : suspendedError,
+                    DataJson = suspendedJson,
                 };
                 await store.SaveAsync(checkpoint);
                 return checkpoint;
             }
 
-            // Completed/Skipped → 推进到下一步
+            // Completed/Skipped → 推进到下一步;输出无法持久化则不能推进(推进即丢数据)
+            var (json, serializeError) = SerializeData(data, checkpoint, step.Name);
+            if (serializeError is not null)
+            {
+                checkpoint = checkpoint with
+                {
+                    OverallStatus = StepStatus.Failed,
+                    LastError = serializeError,
+                };
+                await store.SaveAsync(checkpoint);
+                return checkpoint;
+            }
             checkpoint = checkpoint with
             {
                 CurrentStepIndex = checkpoint.CurrentStepIndex + 1,
-                DataJson = SerializeSafe(data, checkpoint.WorkflowName, $"步骤 {step.Name} 输出"),
+                DataJson = json,
             };
             await store.SaveAsync(checkpoint);
         }

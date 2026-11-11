@@ -79,7 +79,7 @@ public sealed class NexMeshEventBusHostedService(
         {
             while (_reader.TryRead(out var item))
             {
-                await DispatchSafeAsync(item, drainCts.Token);
+                await DispatchSafeAsync(item, drainCts.Token, drain: true);
             }
         }
         catch (OperationCanceledException)
@@ -131,11 +131,11 @@ public sealed class NexMeshEventBusHostedService(
 
     /// <summary>分发隔离壳:任何非取消异常(含 DI 解析失败、基础设施异常)都被捕获记日志与
     /// dropped 指标,消费循环不因此终止;取消异常上抛(停机语义)。</summary>
-    private async Task DispatchSafeAsync(EventWorkItem item, CancellationToken cancellationToken)
+    private async Task DispatchSafeAsync(EventWorkItem item, CancellationToken cancellationToken, bool drain = false)
     {
         try
         {
-            await DispatchAsync(item, cancellationToken);
+            await DispatchAsync(item, cancellationToken, drain);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -150,7 +150,7 @@ public sealed class NexMeshEventBusHostedService(
 
     /// <summary>单事件分发:全部匹配订阅按确定性顺序执行(五步纪律 + 特性级重试 + 监视器 + 故障上报);
     /// 任何异常都不逃逸——消费循环永不因业务异常终止。</summary>
-    private async Task DispatchAsync(EventWorkItem item, CancellationToken cancellationToken)
+    private async Task DispatchAsync(EventWorkItem item, CancellationToken cancellationToken, bool drain = false)
     {
         var subscriptions = _registry!.Match(item.EventId);
         if (subscriptions.Count == 0)
@@ -165,48 +165,62 @@ public sealed class NexMeshEventBusHostedService(
 
         foreach (var subscription in subscriptions)
         {
-            await runner.RunAsync(item.Context, async (sp, ct) =>
+            // SSS+交叉审核修复:排干阶段宿主停机令牌已取消——排干分发走 RunDrainAsync
+            // (五步纪律同构,令牌只用调用方限时令牌,支持取消的处理器拿到新鲜令牌)
+            var work = BuildWork(item, subscription);
+            if (drain)
             {
-                var context = new EventContext(item.EventId, item.Payload, item.Context, item.CreatedAt, ct);
-                var monitor = sp.GetService<IEventMonitor>();
-                var fault = sp.GetService<IEventFaultHandler>();
-                await SafeMonitorAsync(monitor, m => m.OnExecutingAsync(context, subscription.HandlerName, context.CancellationToken));
-
-                var lastError = await EventRetryLoop.ExecuteAsync(
-                    subscription.Attribute.NumRetries,
-                    subscription.Attribute.RetryTimeoutMs,
-                    subscription.Attribute.ExceptionTypes,
-                    _timeProvider,
-                    async () =>
-                    {
-                        var instance = sp.GetRequiredService(subscription.SubscriberType);
-                        await subscription.Invoke(instance, context);
-                    },
-                    onRetry: () => EventBusMetrics.Retried(item.EventId, subscription.HandlerName),
-                    cancellationToken: ct);
-
-                if (lastError is not null)
-                {
-                    EventBusMetrics.Dropped(item.EventId, subscription.HandlerName, "retries-exhausted");
-                    await SafeMonitorAsync(monitor, m => m.OnExecutedAsync(context, subscription.HandlerName, lastError, context.CancellationToken));
-                    if (fault is not null)
-                    {
-                        try
-                        {
-                            await fault.HandleAsync(context, subscription.HandlerName, lastError, ct);
-                        }
-                        catch (Exception faultEx)
-                        {
-                            _logger?.LogError(faultEx, "[NexMesh.Events] 故障处理器 {Handler} 自身异常(事件 {EventId})",
-                                subscription.HandlerName, item.EventId);
-                        }
-                    }
-                    return;
-                }
-                await SafeMonitorAsync(monitor, m => m.OnExecutedAsync(context, subscription.HandlerName, null, context.CancellationToken));
-            }, cancellationToken);
+                await runner.RunDrainAsync(item.Context, work, cancellationToken);
+            }
+            else
+            {
+                await runner.RunAsync(item.Context, work, cancellationToken);
+            }
         }
     }
+
+    /// <summary>单订阅执行体(事件上下文构造 + 监视器 + 特性级重试 + 故障上报)。</summary>
+    private Func<IServiceProvider, CancellationToken, Task> BuildWork(
+        EventWorkItem item, EventSubscription subscription)
+        => async (sp, ct) =>
+        {
+            var context = new EventContext(item.EventId, item.Payload, item.Context, item.CreatedAt, ct);
+            var monitor = sp.GetService<IEventMonitor>();
+            var fault = sp.GetService<IEventFaultHandler>();
+            await SafeMonitorAsync(monitor, m => m.OnExecutingAsync(context, subscription.HandlerName, context.CancellationToken));
+
+            var lastError = await EventRetryLoop.ExecuteAsync(
+                subscription.Attribute.NumRetries,
+                subscription.Attribute.RetryTimeoutMs,
+                subscription.Attribute.ExceptionTypes,
+                _timeProvider,
+                async () =>
+                {
+                    var instance = sp.GetRequiredService(subscription.SubscriberType);
+                    await subscription.Invoke(instance, context);
+                },
+                onRetry: () => EventBusMetrics.Retried(item.EventId, subscription.HandlerName),
+                cancellationToken: ct);
+
+            if (lastError is not null)
+            {
+                EventBusMetrics.Dropped(item.EventId, subscription.HandlerName, "retries-exhausted");
+                await SafeMonitorAsync(monitor, m => m.OnExecutedAsync(context, subscription.HandlerName, lastError, context.CancellationToken));
+                if (fault is not null)
+                {
+                    try
+                    {
+                        await fault.HandleAsync(context, subscription.HandlerName, lastError, ct);
+                    }
+                    catch (Exception faultEx)
+                    {
+                        _logger?.LogError(faultEx, "[NexMesh.Events] 故障处理器 {Handler} 自身异常(事件 {EventId})", subscription.HandlerName, item.EventId);
+                    }
+                }
+                return;
+            }
+            await SafeMonitorAsync(monitor, m => m.OnExecutedAsync(context, subscription.HandlerName, null, context.CancellationToken));
+        };
 
     /// <summary>监视器异常不影响事件处理(监视器是旁路)。</summary>
     private static async Task SafeMonitorAsync(IEventMonitor? monitor, Func<IEventMonitor, Task> invoke)

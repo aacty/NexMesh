@@ -1,0 +1,150 @@
+namespace NexMesh.AI.Configuration
+{
+    public class LlmProviderConfig
+    {
+        public LlmProviderConfig() { }
+        public string ApiKey { get; set; }
+        public string Endpoint { get; set; }
+        public string Model { get; set; }
+        public string Type { get; set; }
+    }
+    public class NexMeshAiOptions
+    {
+        public const string SectionName = "NexMesh:AI";
+        public NexMeshAiOptions() { }
+        public string DefaultProvider { get; set; }
+        public System.Collections.Generic.Dictionary<string, NexMesh.AI.Configuration.LlmProviderConfig> Providers { get; set; }
+    }
+}
+namespace NexMesh.AI.Core
+{
+    public interface INexMeshChatFactory
+    {
+        Microsoft.Extensions.AI.IChatClient CreateClient(string? providerName = null);
+    }
+    public sealed class NexMeshCancellationGuardChatClient : Microsoft.Extensions.AI.DelegatingChatClient
+    {
+        public NexMeshCancellationGuardChatClient(Microsoft.Extensions.AI.IChatClient inner, Microsoft.AspNetCore.Http.IHttpContextAccessor? httpAccessor) { }
+        public override System.Threading.Tasks.Task<Microsoft.Extensions.AI.ChatResponse> GetResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? options = null, System.Threading.CancellationToken cancellationToken = default) { }
+        [System.Runtime.CompilerServices.AsyncIteratorStateMachine(typeof(NexMesh.AI.Core.NexMeshCancellationGuardChatClient.<GetStreamingResponseAsync>d__3))]
+        public override System.Collections.Generic.IAsyncEnumerable<Microsoft.Extensions.AI.ChatResponseUpdate> GetStreamingResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? options = null, [System.Runtime.CompilerServices.EnumeratorCancellation] System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public class NexMeshChatFactory : NexMesh.AI.Core.INexMeshChatFactory
+    {
+        public NexMeshChatFactory(Microsoft.Extensions.Options.IOptions<NexMesh.AI.Configuration.NexMeshAiOptions> options, System.IServiceProvider services) { }
+        public Microsoft.Extensions.AI.IChatClient CreateClient(string? providerName = null) { }
+    }
+    public sealed class StubChatClient : Microsoft.Extensions.AI.IChatClient, System.IDisposable
+    {
+        public StubChatClient(string model = "nexmesh-stub") { }
+        public void Dispose() { }
+        public System.Threading.Tasks.Task<Microsoft.Extensions.AI.ChatResponse> GetResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? options = null, System.Threading.CancellationToken cancellationToken = default) { }
+        public object? GetService(System.Type serviceType, object? serviceKey = null) { }
+        [System.Runtime.CompilerServices.AsyncIteratorStateMachine(typeof(NexMesh.AI.Core.StubChatClient.<GetStreamingResponseAsync>d__3))]
+        public System.Collections.Generic.IAsyncEnumerable<Microsoft.Extensions.AI.ChatResponseUpdate> GetStreamingResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? options = null, [System.Runtime.CompilerServices.EnumeratorCancellation] System.Threading.CancellationToken cancellationToken = default) { }
+    }
+}
+namespace NexMesh.AI
+{
+    public interface ISemanticCacheWrapper
+    {
+        Microsoft.Extensions.AI.IChatClient Wrap(Microsoft.Extensions.AI.IChatClient inner);
+    }
+    public static class NexMeshAiServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshAi(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration, params System.Reflection.Assembly[] assemblies) { }
+    }
+    public sealed class ToolSearchOptions
+    {
+        public ToolSearchOptions() { }
+        public bool Enabled { get; set; }
+        public int TopK { get; set; }
+    }
+}
+namespace NexMesh.AI.Observability
+{
+    public static class NexMeshTelemetry
+    {
+        public const string ActivitySourceName = "NexMesh.AI";
+        public static System.Diagnostics.ActivitySource Source { get; }
+    }
+}
+namespace NexMesh.AI.Resilience
+{
+    public sealed class ResilienceOptions
+    {
+        public ResilienceOptions() { }
+        public double BreakFailureRatio { get; set; }
+        public int BreakSeconds { get; set; }
+        public bool Enabled { get; set; }
+        public int MaxRetryAttempts { get; set; }
+        public int MinimumThroughput { get; set; }
+        public int RetryBaseDelaySeconds { get; set; }
+        public int SamplingSeconds { get; set; }
+        public int TimeoutSeconds { get; set; }
+    }
+    public sealed class ResilientChatClient : Microsoft.Extensions.AI.DelegatingChatClient
+    {
+        public ResilientChatClient(Microsoft.Extensions.AI.IChatClient inner, NexMesh.AI.Resilience.ResilienceOptions options) { }
+        public override System.Threading.Tasks.Task<Microsoft.Extensions.AI.ChatResponse> GetResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? chatOptions = null, System.Threading.CancellationToken cancellationToken = default) { }
+        [System.Runtime.CompilerServices.AsyncIteratorStateMachine(typeof(NexMesh.AI.Resilience.ResilientChatClient.<GetStreamingResponseAsync>d__5))]
+        public override System.Collections.Generic.IAsyncEnumerable<Microsoft.Extensions.AI.ChatResponseUpdate> GetStreamingResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? chatOptions = null, [System.Runtime.CompilerServices.EnumeratorCancellation] System.Threading.CancellationToken cancellationToken = default) { }
+    }
+}
+namespace NexMesh.AI.Tools
+{
+    public sealed class ApprovalRequiredAIFunction : Microsoft.Extensions.AI.AIFunction
+    {
+        public ApprovalRequiredAIFunction(Microsoft.Extensions.AI.AIFunction rawFunction, NexMesh.AI.Tools.IToolApprovalGate gate) { }
+        public override string Description { get; }
+        public override System.Text.Json.JsonElement JsonSchema { get; }
+        public override string Name { get; }
+        public override System.Text.Json.JsonElement? ReturnJsonSchema { get; }
+        protected override System.Threading.Tasks.ValueTask<object?> InvokeCoreAsync(Microsoft.Extensions.AI.AIFunctionArguments arguments, System.Threading.CancellationToken cancellationToken) { }
+    }
+    public sealed class HashEmbedder : NexMesh.AI.Tools.ISemanticEmbedder
+    {
+        public HashEmbedder() { }
+        public System.Threading.Tasks.Task<float[]> EmbedAsync(string text, System.Threading.CancellationToken ct = default) { }
+    }
+    public interface INexMeshToolRegistry
+    {
+        System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.AIFunction> DiscoverTools();
+        Microsoft.Extensions.AI.AIFunction? FindRawFunction(string name);
+    }
+    public interface ISemanticEmbedder
+    {
+        System.Threading.Tasks.Task<float[]> EmbedAsync(string text, System.Threading.CancellationToken ct = default);
+    }
+    public interface IToolApprovalGate
+    {
+        System.Threading.Tasks.Task<string> EnqueueAsync(string toolName, string description, System.Collections.Generic.IReadOnlyDictionary<string, object?> arguments);
+    }
+    public enum NexMeshRiskLevel
+    {
+        Low = 0,
+        High = 1,
+    }
+    [System.AttributeUsage(System.AttributeTargets.Method)]
+    public class NexMeshToolAttribute : System.Attribute
+    {
+        public NexMeshToolAttribute(string description, NexMesh.AI.Tools.NexMeshRiskLevel risk = 0) { }
+        public string Description { get; }
+        public NexMesh.AI.Tools.NexMeshRiskLevel Risk { get; }
+    }
+    public class NexMeshToolRegistry : NexMesh.AI.Tools.INexMeshToolRegistry
+    {
+        public NexMeshToolRegistry(Microsoft.Extensions.Configuration.IConfiguration configuration, params System.Reflection.Assembly[] assemblies) { }
+        public NexMeshToolRegistry(Microsoft.Extensions.Configuration.IConfiguration configuration, System.IServiceProvider? services, params System.Reflection.Assembly[] assemblies) { }
+        public System.Collections.Generic.IReadOnlyList<Microsoft.Extensions.AI.AIFunction> DiscoverAllTools() { }
+        public System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.AIFunction> DiscoverTools() { }
+        public Microsoft.Extensions.AI.AIFunction? FindRawFunction(string name) { }
+    }
+    public sealed class ToolSearchChatClient : Microsoft.Extensions.AI.DelegatingChatClient
+    {
+        public ToolSearchChatClient(Microsoft.Extensions.AI.IChatClient inner, NexMesh.AI.Tools.ISemanticEmbedder embedder, NexMesh.AI.Tools.INexMeshToolRegistry toolRegistry, int topK = 5) { }
+        public override System.Threading.Tasks.Task<Microsoft.Extensions.AI.ChatResponse> GetResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? chatOptions = null, System.Threading.CancellationToken cancellationToken = default) { }
+        [System.Runtime.CompilerServices.AsyncIteratorStateMachine(typeof(NexMesh.AI.Tools.ToolSearchChatClient.<GetStreamingResponseAsync>d__7))]
+        public override System.Collections.Generic.IAsyncEnumerable<Microsoft.Extensions.AI.ChatResponseUpdate> GetStreamingResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? chatOptions = null, [System.Runtime.CompilerServices.EnumeratorCancellation] System.Threading.CancellationToken cancellationToken = default) { }
+    }
+}

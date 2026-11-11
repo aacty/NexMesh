@@ -1,0 +1,100 @@
+namespace NexMesh.AI.Workflow
+{
+    public sealed class FreeSqlCheckpointStore : NexMesh.AI.Workflow.IWorkflowCheckpointStore
+    {
+        public FreeSqlCheckpointStore(IFreeSql db) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Workflow.WorkflowCheckpoint?> GetAsync(string workflowId) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Workflow.WorkflowCheckpoint>> ListSuspendedAsync() { }
+        public System.Threading.Tasks.Task SaveAsync(NexMesh.AI.Workflow.WorkflowCheckpoint checkpoint) { }
+        public System.Threading.Tasks.Task<bool> TryMarkRunningAsync(string workflowId, System.DateTime resumedAt) { }
+        public System.Threading.Tasks.Task<bool> TryMarkSuspendedAsync(string workflowId) { }
+        [FreeSql.DataAnnotations.Table(Name="nexmesh_workflow_checkpoints")]
+        public class CheckpointEntity
+        {
+            public CheckpointEntity() { }
+            [FreeSql.DataAnnotations.Column(StringLength=-1)]
+            public string ContextHeadersJson { get; set; }
+            public System.DateTime CreatedAt { get; set; }
+            public int CurrentStepIndex { get; set; }
+            [FreeSql.DataAnnotations.Column(StringLength=-1)]
+            public string DataJson { get; set; }
+            [FreeSql.DataAnnotations.Column(StringLength=-1)]
+            public string? LastError { get; set; }
+            public NexMesh.AI.Workflow.StepStatus OverallStatus { get; set; }
+            public System.DateTime? ResumedAt { get; set; }
+            [FreeSql.DataAnnotations.Column(IsPrimary=true, StringLength=64)]
+            public string WorkflowId { get; set; }
+            [FreeSql.DataAnnotations.Column(StringLength=256)]
+            public string WorkflowName { get; set; }
+        }
+    }
+    public interface IWorkflowCheckpointStore
+    {
+        System.Threading.Tasks.Task<NexMesh.AI.Workflow.WorkflowCheckpoint?> GetAsync(string workflowId);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Workflow.WorkflowCheckpoint>> ListSuspendedAsync();
+        System.Threading.Tasks.Task SaveAsync(NexMesh.AI.Workflow.WorkflowCheckpoint checkpoint);
+        System.Threading.Tasks.Task<bool> TryMarkRunningAsync(string workflowId, System.DateTime resumedAt);
+        System.Threading.Tasks.Task<bool> TryMarkSuspendedAsync(string workflowId);
+    }
+    public sealed class InMemoryCheckpointStore : NexMesh.AI.Workflow.IWorkflowCheckpointStore
+    {
+        public InMemoryCheckpointStore() { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Workflow.WorkflowCheckpoint?> GetAsync(string workflowId) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Workflow.WorkflowCheckpoint>> ListSuspendedAsync() { }
+        public System.Threading.Tasks.Task SaveAsync(NexMesh.AI.Workflow.WorkflowCheckpoint checkpoint) { }
+        public System.Threading.Tasks.Task<bool> TryMarkRunningAsync(string workflowId, System.DateTime resumedAt) { }
+        public System.Threading.Tasks.Task<bool> TryMarkSuspendedAsync(string workflowId) { }
+    }
+    public sealed class NexMeshWorkflowEngine
+    {
+        public NexMeshWorkflowEngine(NexMesh.AI.Workflow.IWorkflowCheckpointStore store, NexMesh.Core.Context.INexMeshBackgroundRunner runner, Microsoft.Extensions.Logging.ILogger<NexMesh.AI.Workflow.NexMeshWorkflowEngine>? logger = null) { }
+        public System.Threading.Tasks.Task<bool> RecoverStaleAsync(string workflowId) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Workflow.WorkflowCheckpoint> ResumeAsync(string workflowId, System.Collections.Generic.List<NexMesh.AI.Workflow.NexMeshWorkflowStep> steps, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Workflow.WorkflowCheckpoint> StartAsync(string workflowName, System.Collections.Generic.List<NexMesh.AI.Workflow.NexMeshWorkflowStep> steps, NexMesh.Core.Context.NexMeshContext? context = null, System.Collections.Generic.Dictionary<string, object?>? initialData = null, System.Threading.CancellationToken ct = default) { }
+    }
+    public static class NexMeshWorkflowExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshWorkflow(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration) { }
+    }
+    public abstract class NexMeshWorkflowStep
+    {
+        protected NexMeshWorkflowStep() { }
+        public string Description { get; init; }
+        public string Name { get; init; }
+        public abstract System.Threading.Tasks.Task<NexMesh.AI.Workflow.StepStatus> ExecuteAsync(NexMesh.AI.Workflow.StepContext context);
+    }
+    public sealed class StepContext
+    {
+        public StepContext(System.IServiceProvider scoped) { }
+        public System.Threading.CancellationToken CancellationToken { get; set; }
+        public System.Collections.Generic.Dictionary<string, object?> Inputs { get; }
+        public bool IsResumed { get; }
+        public System.Collections.Generic.Dictionary<string, object?> Outputs { get; }
+        public System.IServiceProvider Services { get; }
+        public T? GetInput<T>(string key) { }
+    }
+    public enum StepStatus
+    {
+        Pending = 0,
+        Running = 1,
+        Suspended = 2,
+        Completed = 3,
+        Failed = 4,
+        Skipped = 5,
+    }
+    public sealed class WorkflowCheckpoint : System.IEquatable<NexMesh.AI.Workflow.WorkflowCheckpoint>
+    {
+        public WorkflowCheckpoint() { }
+        public System.Collections.Generic.IReadOnlyDictionary<string, string> ContextHeaders { get; init; }
+        public System.DateTime CreatedAt { get; init; }
+        public int CurrentStepIndex { get; init; }
+        public string DataJson { get; init; }
+        public string? LastError { get; init; }
+        public NexMesh.AI.Workflow.StepStatus OverallStatus { get; init; }
+        public System.DateTime? ResumedAt { get; init; }
+        public string StepsSignature { get; init; }
+        public string WorkflowId { get; init; }
+        public string WorkflowName { get; init; }
+        public static string ComputeStepsSignature(System.Collections.Generic.IEnumerable<NexMesh.AI.Workflow.NexMeshWorkflowStep> steps) { }
+    }
+}

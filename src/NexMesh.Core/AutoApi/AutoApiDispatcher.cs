@@ -99,48 +99,61 @@ internal static class AutoApiDispatcher
         // 文件直绑:IFormFile / IFormFileCollection(需 multipart/form-data 请求)
         if (parameter.ParameterType == typeof(IFormFile))
         {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            var form = await ReadFormSafeAsync(context, parameter.Name!);
             return form.Files.Count > 0 ? form.Files[0] : null;
         }
         if (parameter.ParameterType == typeof(IFormFileCollection))
         {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            var form = await ReadFormSafeAsync(context, parameter.Name!);
             return form.Files;
         }
 
         // 简单元素集合(Array/List/IEnumerable/HashSet):从 Query 逗号分隔或重复键绑定
-        if (IsSimpleCollection(parameter.ParameterType, out var elementType, out var concreteType))
+        // (探测结论按 Type 缓存——MakeGenericType 每次 96B 分配)
+        var collectionProbe = ContractInvokerCache.ProbeSimpleCollection(parameter.ParameterType);
+        if (collectionProbe.Is)
         {
-            return BindSimpleCollection(context, parameter, elementType, concreteType);
+            return BindSimpleCollection(context, parameter, collectionProbe.Element!, collectionProbe.Concrete!);
         }
 
         if (!IsSimple(parameter.ParameterType))
         {
             // [FromForm] 复杂对象:从表单字段绑定(简单属性同名映射)
-            if (parameter.GetCustomAttribute<FromFormAttribute>() is not null)
+            // (探测按 ParameterInfo 缓存——GetCustomAttribute 每次 1595ns/528B 重新实例化特性)
+            if (ContractInvokerCache.HasFromForm(parameter))
             {
                 return await BindFromFormAsync(context, parameter.ParameterType);
             }
             // 复杂类型:JSON Body(每方法至多一个,映射期校验);
             // multipart 场景下从同名表单字段的 JSON 文本解析(对象与文件同请求混搭)
+            // SSS+输入攻击审核:JSON 解析失败/Content-Type 谎称/表单垃圾体均为客户端错误(40001/400),不进 500
             try
             {
                 if (context.Request.HasFormContentType)
                 {
-                    var form = await context.Request.ReadFormAsync(context.RequestAborted);
+                    var form = await ReadFormSafeAsync(context, parameter.Name!);
                     if (!form.TryGetValue(parameter.Name!, out var json))
                     {
-                        return null;
+                        // SSS+输入攻击审核:multipart 缺少必需 Body 字段 → 40001
+                        //(此前返回 null 进业务 NRE → 50000)
+                        throw new MeshException(
+                            $"缺少请求体字段 {parameter.Name}(multipart/form-data)", errorCode: 40001, statusCode: 400);
                     }
                     return System.Text.Json.JsonSerializer.Deserialize(json.ToString(), parameter.ParameterType,
                         new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
                 }
+                if (!context.Request.HasJsonContentType())
+                {
+                    // Content-Type 谎称(text/plain 载 JSON)/缺失:此前 InvalidOperationException 逃逸 → 500
+                    throw new MeshException(
+                        $"请求体需要 application/json Content-Type(字段 {parameter.Name})", errorCode: 40001, statusCode: 400);
+                }
                 return await context.Request.ReadFromJsonAsync(parameter.ParameterType);
             }
-            catch (System.Text.Json.JsonException)
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException or System.IO.IOException)
             {
                 throw new MeshException(
-                    $"请求体 JSON 解析失败(字段 {parameter.Name})", errorCode: 40001, statusCode: 400);
+                    $"请求体解析失败(字段 {parameter.Name}):请确认 JSON 合法且 Content-Type 为 application/json", errorCode: 40001, statusCode: 400);
             }
         }
 
@@ -156,7 +169,9 @@ internal static class AutoApiDispatcher
         }
         if (context.Request.Query.TryGetValue(name, out var queryValue))
         {
-            return ConvertSimple(queryValue.ToString(), parameter);
+            // SSS+输入攻击审核:标量参数重复键取首值(MVC 语义)——此前 StringValues.ToString()
+            // 逗号连接 × decimal AllowThousands → "1,25" 静默变 125(数据损坏)
+            return ConvertSimple(queryValue.Count > 1 ? queryValue[0] : queryValue.ToString(), parameter);
         }
 
         // 缺省:参数默认值 → 类型默认值
@@ -176,11 +191,14 @@ internal static class AutoApiDispatcher
         var underlying = Nullable.GetUnderlyingType(targetType) ?? targetType;
         try
         {
-            return underlying == typeof(string)
-                ? raw
-                : TypeDescriptor.GetConverter(underlying).ConvertFromInvariantString(raw);
+            // 快路径直接 Parse(实测 int 175ns/24B→18ns/0B);枚举等冷类型回退 TypeDescriptor
+            if (SimpleConverter.TryConvert(raw, underlying, out var fast))
+            {
+                return fast;
+            }
+            return TypeDescriptor.GetConverter(underlying).ConvertFromInvariantString(raw);
         }
-        catch (Exception ex) when (ex is FormatException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException or NotSupportedException)
         {
             throw new MeshException(
                 $"参数 {parameter.Name} 格式错误:\"{raw}\" 无法转换为 {underlying.Name}",
@@ -243,19 +261,44 @@ internal static class AutoApiDispatcher
         {
             return null; // 未提供 → null(引用类型集合),业务自行判空
         }
+        // SSS+输入攻击审核:混合形态(重复键×逗号值)统一拍平(此前 decimal "1,2" 经 AllowThousands
+        // 静默变 12);HashSet/ISet 不实现 IList,统一以 List 填充后按需转换具体类型(此前 InvalidCast → 500)
         var raw = values.Count > 1
-            ? values.ToArray()
-            : (values[0] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            ? values.SelectMany(v => (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            : (IEnumerable<string>)(values[0] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var list = (System.Collections.IList)Activator.CreateInstance(concreteListType)!;
+        var list = new List<object?>();
         foreach (var item in raw)
         {
             list.Add(ConvertElement(item ?? "", elementType, parameter));
         }
-        // Array 参数:List → ToArray(编译委托,零反射)
-        return parameter.ParameterType.IsArray
-            ? ContractInvokerCache.GetCollectionToArray(elementType)(list)
-            : list;
+        if (parameter.ParameterType.IsArray)
+        {
+            // Array 参数:List → ToArray(编译委托,零反射)
+            var typedList = (System.Collections.IList)Activator.CreateInstance(concreteListType)!;
+            foreach (var item in list)
+            {
+                typedList.Add(item);
+            }
+            return ContractInvokerCache.GetCollectionToArray(elementType)(typedList);
+        }
+        if (concreteListType == typeof(HashSet<>) || typeof(System.Collections.IEnumerable).IsAssignableFrom(concreteListType) && concreteListType != typeof(List<>))
+        {
+            // HashSet<T>/ISet<T>:经 IEnumerable<T> 构造器转换(去重语义归类型本身)
+            var enumerableType = typeof(IEnumerable<>).MakeGenericType(elementType);
+            var typedList = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elementType))!;
+            foreach (var item in list)
+            {
+                typedList.Add(item);
+            }
+            return Activator.CreateInstance(concreteListType, enumerableType.IsAssignableFrom(typedList.GetType()) ? typedList : null)!;
+        }
+        var resultList = (System.Collections.IList)Activator.CreateInstance(concreteListType)!;
+        foreach (var item in list)
+        {
+            resultList.Add(item);
+        }
+        return resultList;
     }
 
     private static object? ConvertElement(string raw, Type elementType, ParameterInfo parameter)
@@ -263,10 +306,13 @@ internal static class AutoApiDispatcher
         var underlying = Nullable.GetUnderlyingType(elementType) ?? elementType;
         try
         {
-            return underlying == typeof(string) ? raw
-                : TypeDescriptor.GetConverter(underlying).ConvertFromInvariantString(raw);
+            if (SimpleConverter.TryConvert(raw, underlying, out var fast))
+            {
+                return fast;
+            }
+            return TypeDescriptor.GetConverter(underlying).ConvertFromInvariantString(raw);
         }
-        catch (Exception ex) when (ex is FormatException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException or NotSupportedException)
         {
             throw new MeshException(
                 $"参数 {parameter.Name} 的集合元素 \"{raw}\" 无法转换为 {underlying.Name}",
@@ -277,7 +323,7 @@ internal static class AutoApiDispatcher
     /// <summary>[FromForm] 复杂对象:公共可写简单属性按表单字段名(忽略大小写)填充,嵌套/复杂属性忽略。</summary>
     private static async Task<object?> BindFromFormAsync(HttpContext context, Type targetType)
     {
-        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var form = await ReadFormSafeAsync(context, targetType.Name);
         if (form.Count == 0 && form.Files.Count == 0)
         {
             return null;
@@ -309,11 +355,11 @@ internal static class AutoApiDispatcher
             var underlying = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
             try
             {
-                prop.SetValue(instance, underlying == typeof(string)
-                    ? field.ToString()
+                prop.SetValue(instance, SimpleConverter.TryConvert(field.ToString(), underlying, out var fast)
+                    ? fast
                     : TypeDescriptor.GetConverter(underlying).ConvertFromInvariantString(field.ToString()));
             }
-            catch (Exception ex) when (ex is FormatException or ArgumentException or NotSupportedException)
+            catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException or NotSupportedException)
             {
                 throw new MeshException($"表单字段 {prop.Name} 格式错误", 40001, 400);
             }
@@ -321,8 +367,27 @@ internal static class AutoApiDispatcher
         return instance;
     }
 
+    // 装箱默认值缓存:值类型参数在调用点 unbox 即拷贝,共享同一装箱实例安全(替代每请求 Activator.CreateInstance)
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, object?> BoxedDefaults = new();
+
+    /// <summary>表单读取安全封装:伪 multipart/垃圾体等解析异常统一 40001(此前逃逸 → 500)。</summary>
+    private static async Task<IFormCollection> ReadFormSafeAsync(HttpContext context, string field)
+    {
+        try
+        {
+            return await context.Request.ReadFormAsync(context.RequestAborted);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 表单解析任何失败(伪 multipart/缺 boundary/InvalidDataException 族)均为客户端错误
+            throw new MeshException($"表单解析失败(字段 {field}):请确认 multipart/form-data 编码合法", errorCode: 40001, statusCode: 400);
+        }
+    }
+
     internal static object? DefaultOf(Type type) =>
-        type.IsValueType && Nullable.GetUnderlyingType(type) is null ? Activator.CreateInstance(type) : null;
+        type.IsValueType && Nullable.GetUnderlyingType(type) is null
+            ? BoxedDefaults.GetOrAdd(type, static t => Activator.CreateInstance(t)!)
+            : null;
 
     private static async Task WriteResultAsync(HttpContext context, object? result)
     {

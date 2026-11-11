@@ -4,6 +4,7 @@ using GrpcCore = Grpc.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using NexMesh.Core.AutoApi;
 using static NexMesh.Grpc.ContractGateway;
@@ -125,11 +126,18 @@ public static class NexMeshGrpcExtensions
     /// <summary>契约方法参数计划快照(名称/类型/缺省值/取消令牌位)。</summary>
     public sealed record GatewayParameter(string Name, Type Type, bool HasDefault, object? Default, bool IsCancellationToken);
 
-    /// <summary>网关服务:Invoke(service, method, args_json) → 契约实现 → ApiResult 信封。</summary>
+    /// <summary>网关服务:Invoke(service, method, args_json) → 契约实现 → ApiResult 信封。
+    /// SSS+交叉审核修复(P0):授权判定镜像 REST 虚拟网关同一规则(默认拒绝/[Authorize]/角色)——
+    /// 此前 gRPC 面零授权检查,同一契约的 REST 401/403 在 gRPC 被匿名直通(实证绕过)。
+    /// 未认证→Unauthenticated,角色不足→PermissionDenied(gRPC 惯用状态码,与 REST 401/403 对齐)。</summary>
     public sealed class ContractGatewayService(
         ContractGrpcRegistry registry,
+        Microsoft.Extensions.Configuration.IConfiguration? configuration = null,
         ILogger<ContractGatewayService>? logger = null) : ContractGatewayBase
     {
+        // 与 REST 虚拟网关同一配置源(NexMesh:Contracts:AllowAnonymousByDefault)
+        private readonly bool _allowByDefault = configuration?.GetValue<bool>("NexMesh:Contracts:AllowAnonymousByDefault", false) ?? false;
+
         public override async Task<NexMesh.Grpc.ContractReply> Invoke(
             NexMesh.Grpc.ContractCall request,
             GrpcCore.ServerCallContext context)
@@ -141,6 +149,7 @@ public static class NexMeshGrpcExtensions
                     ? "service 与 method 不能为空"
                     : $"未找到契约方法 {request.Service}.{request.Method}"));
             }
+            AuthorizeOrThrow(plan, global::Grpc.Core.ServerCallContextExtensions.GetHttpContext(context));
             try
             {
                 var args = BindArgs(plan, request.ArgsJson, context.CancellationToken);
@@ -166,6 +175,16 @@ public static class NexMeshGrpcExtensions
                 logger?.LogWarning(jex, "[NexMesh.gRPC] Invoke {Service}.{Method} 参数 JSON 非法", request.Service, request.Method);
                 return Reply(Fail("参数 JSON 非法"));
             }
+            catch (System.OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
+            {
+                // L 第三轮交叉测试实证:deadline 到期后契约抛出 OCE 时,原实现落入 catch(Exception)
+                // 包装成"服务内部错误"信封抢答——负载下若应答抢先于客户端 deadline 判定到达,
+                // 客户端收到 gRPC OK + 失败信封(而非取消类状态),且取消被记为 Error 级服务端故障污染告警。
+                // 规范转为 CANCELLED:gRPC 惯用状态(裸抛 OCE 会被运行时映射为 Unknown + 错误日志),
+                // 客户端最终收到取消类状态(deadline 自判 DeadlineExceeded 或服务端 Cancelled,均为非 OK)。
+                throw new GrpcCore.RpcException(new GrpcCore.Status(GrpcCore.StatusCode.Cancelled,
+                    "调用已取消(deadline 到期/客户端中止)"));
+            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "[NexMesh.gRPC] Invoke {Service}.{Method} 失败", request.Service, request.Method);
@@ -177,6 +196,27 @@ public static class NexMeshGrpcExtensions
             => string.IsNullOrWhiteSpace(service) || string.IsNullOrWhiteSpace(method)
                 ? null
                 : registry.Find(service, method);
+
+        /// <summary>授权判定:与 REST 虚拟网关(AutoApiGatewayExtensions)同一规则,逐条对齐。</summary>
+        private void AuthorizeOrThrow(GatewayPlan plan, Microsoft.AspNetCore.Http.HttpContext http)
+        {
+            var e = plan.Endpoint;
+            var user = http.User;
+            if (!e.AllowAnonymous
+                && (e.ExplicitAuthorize || e.Roles is not null || !_allowByDefault)
+                && user.Identity?.IsAuthenticated != true)
+            {
+                throw new GrpcCore.RpcException(new GrpcCore.Status(GrpcCore.StatusCode.Unauthenticated,
+                    "该操作需要登录(契约默认拒绝)"));
+            }
+            if (e.Roles is { Length: > 0 }
+                && user.Identity?.IsAuthenticated == true
+                && e.Roles.All(r => !user.IsInRole(r)))
+            {
+                throw new GrpcCore.RpcException(new GrpcCore.Status(GrpcCore.StatusCode.PermissionDenied,
+                    "权限不足(契约角色校验)"));
+            }
+        }
 
         private static object?[] BindArgs(GatewayPlan plan, string? argsJson, CancellationToken cancellationToken)
         {

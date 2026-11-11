@@ -191,7 +191,9 @@ function buildJobs(){
   div.innerHTML='<table><tr><th>作业</th><th>类型</th><th>类别</th><th>最近执行</th><th style="width:110px"></th></tr>'+
     j.jobs.map(x=>`<tr id="jobrow-${esc(x.jobName)}"><td>${esc(x.jobName)}</td><td>${esc(x.type)}</td><td><span class="badge low">${esc(x.kind)}</span></td>`+
     `<td>${(x.runs&&x.runs.length)?(fmtDurShort(x.runs[0].durationMs)+' '+(x.runs[0].ok?'<span class="badge low">成功</span>':'<span class="badge high">失败</span>')+' <span class="kv">('+esc(x.runs[0].trigger)+')</span>'):'<span class="kv">—</span>'}</td>`+
-    `<td><button style="cursor:pointer;background:var(--acc);color:#fff;border:none;border-radius:8px;padding:4px 10px" onclick="triggerJob('''+esc(x.jobName)+''')">立即执行</button></td></tr>`).join('')+'</table>';
+    `<td><button data-job="${esc(x.jobName)}" style="cursor:pointer;background:var(--acc);color:#fff;border:none;border-radius:8px;padding:4px 10px">立即执行</button></td></tr>`).join('')+'</table>';
+  // SSS+三轮实测修复:内联 onclick 引号错配致整页脚本语法死亡——改 data 属性+闭包
+  div.querySelectorAll('button[data-job]').forEach(b=>b.onclick=()=>triggerJob(b.dataset.job));
   const first=(j.jobs||[]).find(x=>x.runs&&x.runs.length);
   if(first){div.innerHTML+='<h3>最近执行记录('+esc(first.jobName)+')</h3><table><tr><th>开始时间</th><th>耗时</th><th>结果</th><th>来源</th></tr>'+
     first.runs.slice(0,10).map(r=>`<tr><td>${esc(r.startedAt)}</td><td>${esc(r.durationMs)}ms</td><td>${r.ok?'<span class="badge low">成功</span>':'<span class="badge high">失败</span>'+(r.error?' '+esc(r.error):'')}</td><td>${esc(r.trigger)}</td><td>${esc(r.triggeredBy||'-')}</td></tr>`).join('')+'</table>';}
@@ -242,8 +244,9 @@ function buildCache(){
   div.innerHTML='<div class="grid"><div class="stat"><div class="n" style="font-size:16px">'+esc(c.mode)+'</div><div class="l">模式</div></div>'+card(src.length,'缓存源')+'</div>'+
     '<table><tr><th>名称</th><th>键前缀</th><th>默认TTL</th><th>L1 TTL</th><th></th></tr>'+
     src.map(s=>'<tr><td>'+esc(s.name)+'</td><td>'+esc(s.keyPrefix)+'</td><td>'+esc(s.defaultTtlSeconds)+'s</td><td>'+esc(s.l1TtlSeconds)+'s</td>'+
-    '<td><button style="cursor:pointer;background:transparent;color:var(--acc);border:1px solid var(--acc);border-radius:8px;padding:3px 10px" onclick="inspectCache(''+esc(s.name)+'',''+esc(s.keyPrefix)+'')">巡视键</button></td></tr>').join('')+'</table>'+
+    '<td><button data-source="'+esc(s.name)+'" data-prefix="'+esc(s.keyPrefix)+'" style="cursor:pointer;background:transparent;color:var(--acc);border:1px solid var(--acc);border-radius:8px;padding:3px 10px">巡视键</button></td></tr>').join('')+'</table>'+
     '<div id="cacheKeys"></div>';
+  div.querySelectorAll('button[data-source]').forEach(b=>b.onclick=()=>inspectCache(b.dataset.source,b.dataset.prefix));
   return div;
 }
 async function inspectCache(source,keyPrefix){
@@ -255,7 +258,8 @@ async function inspectCache(source,keyPrefix){
     box.innerHTML='<h3>键巡视('+esc(source)+':'+esc(keyPrefix)+'*,共 '+keys.length+')</h3>'+
       '<table><tr><th>键</th><th>TTL</th><th style="width:70px"></th></tr>'+
       keys.map(k=>'<tr><td><code>'+esc(k.key)+'</code></td><td>'+(k.ttlSeconds==null?'永不过期':esc(k.ttlSeconds)+'s')+'</td>'+
-      '<td><button style="cursor:pointer;background:transparent;color:var(--err);border:1px solid var(--err);border-radius:6px;padding:2px 8px" onclick="delCacheKey(''+esc(source)+'',''+encodeURIComponent(String(k.key)).replace(/'/g,'%27')+'')">删</button></td></tr>').join('')+'</table>';
+      '<td><button data-source="'+esc(source)+'" data-key="'+esc(k.key)+'" style="cursor:pointer;background:transparent;color:var(--err);border:1px solid var(--err);border-radius:6px;padding:2px 8px">删</button></td></tr>').join('')+'</table>';
+      box.querySelectorAll('button[data-key]').forEach(b=>b.onclick=()=>delCacheKey(b.dataset.source,b.dataset.key));
   }catch(e){box.innerHTML='<p class="note">巡视失败:'+esc(e.message)+'</p>';}
 }
 async function delCacheKey(source,key){

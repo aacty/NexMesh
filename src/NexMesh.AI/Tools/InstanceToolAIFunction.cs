@@ -22,6 +22,49 @@ internal sealed class InstanceToolAIFunction(
 
     public override string Description => attr.Description;
 
+    // SSS+业务实测修复(AiDemo 真模型发现):基类默认 JsonSchema 是空参数对象——模型看到的
+    // 工具全部"无参",真模型无法传参(实弹:DeepSeek 调 QueryOrder 因无参被框架拒绝)。
+    // 按方法参数构建 JSON Schema 并按 MethodInfo 缓存(元数据恒定)。
+    public override System.Text.Json.JsonElement JsonSchema => SchemaCache.GetOrAdd(method, BuildSchema);
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<MethodInfo, System.Text.Json.JsonElement> SchemaCache = new();
+
+    private static System.Text.Json.JsonElement BuildSchema(MethodInfo method)
+    {
+        var properties = new Dictionary<string, object>(StringComparer.Ordinal);
+        var required = new List<string>();
+        foreach (var p in method.GetParameters())
+        {
+            if (p.ParameterType == typeof(CancellationToken))
+            {
+                continue;
+            }
+            var underlying = Nullable.GetUnderlyingType(p.ParameterType) ?? p.ParameterType;
+            var schemaType = underlying == typeof(string) || underlying.IsEnum
+                    || underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) || underlying == typeof(Guid)
+                ? "string"
+                : underlying == typeof(bool)
+                    ? "boolean"
+                    : underlying == typeof(int) || underlying == typeof(long) || underlying == typeof(short)
+                        || underlying == typeof(byte) || underlying == typeof(uint) || underlying == typeof(ulong)
+                        || underlying == typeof(ushort) || underlying == typeof(sbyte)
+                        ? "integer"
+                        : "number"; // double/float/decimal 及其余
+            properties[p.Name!] = new Dictionary<string, object> { ["type"] = schemaType };
+            if (!p.HasDefaultValue && Nullable.GetUnderlyingType(p.ParameterType) is null)
+            {
+                required.Add(p.Name!);
+            }
+        }
+        var schema = new Dictionary<string, object>
+        {
+            ["type"] = "object",
+            ["properties"] = properties,
+            ["required"] = required,
+        };
+        return System.Text.Json.JsonSerializer.SerializeToElement(schema);
+    }
+
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments,
         CancellationToken cancellationToken)
@@ -81,8 +124,11 @@ internal sealed class InstanceToolAIFunction(
             : System.ComponentModel.TypeDescriptor.GetConverter(underlying).ConvertFromInvariantString(raw);
     }
 
+    // SSS+交叉审核(G-5):与 M.E.AI AIFunctionFactory 对齐——无条件裁 Async 后缀
+    //(此前仅 >"Async".Length+1 才裁,与 Factory 对短名如 "XAsync" 的裁剪规则不一致,
+    // 会导致同方法经不同注册路径得到两个不同工具名)。同名冲突由注册表 fail-fast 兜底。
     private static string TrimAsyncSuffix(string name) =>
-        name.EndsWith("Async", StringComparison.Ordinal) && name.Length > "Async".Length + 1
+        name.EndsWith("Async", StringComparison.Ordinal) && name.Length > "Async".Length
             ? name[..^"Async".Length]
             : name;
 

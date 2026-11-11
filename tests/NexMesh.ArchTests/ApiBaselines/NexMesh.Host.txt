@@ -84,7 +84,7 @@ namespace NexMesh.Host
         public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshGrpc(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints) { }
         public sealed class ContractGatewayService : NexMesh.Grpc.ContractGateway.ContractGatewayBase
         {
-            public ContractGatewayService(NexMesh.Host.NexMeshGrpcExtensions.ContractGrpcRegistry registry, Microsoft.Extensions.Logging.ILogger<NexMesh.Host.NexMeshGrpcExtensions.ContractGatewayService>? logger = null) { }
+            public ContractGatewayService(NexMesh.Host.NexMeshGrpcExtensions.ContractGrpcRegistry registry, Microsoft.Extensions.Configuration.IConfiguration? configuration = null, Microsoft.Extensions.Logging.ILogger<NexMesh.Host.NexMeshGrpcExtensions.ContractGatewayService>? logger = null) { }
             public override System.Threading.Tasks.Task<NexMesh.Grpc.ContractReply> Invoke(NexMesh.Grpc.ContractCall request, Grpc.Core.ServerCallContext context) { }
         }
         public sealed class ContractGrpcRegistry

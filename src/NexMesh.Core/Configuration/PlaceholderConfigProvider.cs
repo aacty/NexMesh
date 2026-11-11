@@ -35,6 +35,9 @@ internal sealed partial class PlaceholderConfigProvider : ConfigurationProvider,
                 else if (dot.Length == 3 && dot[1].Equals(environment, StringComparison.OrdinalIgnoreCase))
                     envFiles.Add(name); // X.{env}.json → 当前环境变体(后加载覆盖)
             }
+            // 目录枚举顺序未被契约保证:按文件名排序,同名键跨文件冲突时"字母序后者赢"跨平台确定
+            baseFiles.Sort(StringComparer.Ordinal);
+            envFiles.Sort(StringComparer.Ordinal);
             foreach (var name in baseFiles)
                 innerBuilder.AddJsonFile(name, optional: true, reloadOnChange: true);
             foreach (var name in envFiles)
@@ -62,7 +65,15 @@ internal sealed partial class PlaceholderConfigProvider : ConfigurationProvider,
         value.Contains('$')
             ? PlaceholderRegex().Replace(value, m =>
             {
-                var env = Environment.GetEnvironmentVariable(m.Groups[1].Value.Trim());
+                var name = m.Groups[1].Value.Trim();
+                // 嵌套/非法占位符(如 ${A:${B}}):变量名中残留 ${ 说明非合法环境变量名,
+                // 原样保留便于人工排查,不静默产出截断后的错误值
+                if (name.Contains('$') || name.Contains('{'))
+                {
+                    return m.Value;
+                }
+
+                var env = Environment.GetEnvironmentVariable(name);
                 return env ?? (m.Groups[2].Success ? m.Groups[2].Value : string.Empty);
             })
             : value;

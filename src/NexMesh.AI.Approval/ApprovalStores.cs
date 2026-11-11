@@ -33,6 +33,18 @@ public sealed class InMemoryApprovalStore : IApprovalStore
 
     public Task<ApprovalRequest> UpdateAsync(ApprovalRequest request)
     {
+        // SSS+交叉审核:状态机单调守卫——①终态(Executed/Failed/Rejected)不可修改;②禁"向后"写回
+        //(非 Pending 单被 Pending 快照覆盖=复活→二次认领,实证过的双执行链路入口)。合法流转:
+        // Pending→Approved/Rejected(认领)、Approved→Executed/Failed(执行落终态)。
+        if (_store.TryGetValue(request.Id, out var current))
+        {
+            var terminal = current.Status is ApprovalStatus.Executed or ApprovalStatus.Failed or ApprovalStatus.Rejected;
+            if (terminal || (request.Status == ApprovalStatus.Pending && current.Status != ApprovalStatus.Pending))
+            {
+                throw new NexMesh.MeshException(
+                    $"审批单 {request.Id} 状态 {current.Status} 不允许写回为 {request.Status}(状态机单调守卫)", 40903, 409);
+            }
+        }
         _store[request.Id] = request;
         return Task.FromResult(request);
     }
@@ -136,14 +148,28 @@ public sealed class FreeSqlApprovalStore(IFreeSql db) : IApprovalStore
     public async Task<ApprovalRequest> UpdateAsync(ApprovalRequest request)
     {
         await _tableSync.Value;
-        await db.Update<ApprovalRequestEntity>()
+        // SSS+交叉审核:状态机单调守卫(与 InMemory 同规则)——①WHERE 排除终态行;②写回 Pending 时
+        // 仅允许当前仍为 Pending(陈旧快照覆盖 Approved/Rejected 影响 0 行即判负,复活链路封死)
+        var writingBackToPending = request.Status == ApprovalStatus.Pending;
+        var update = db.Update<ApprovalRequestEntity>()
             .Set(e => e.Status, request.Status)
             .Set(e => e.DecidedAt, request.DecidedAt)
             .Set(e => e.DecidedBy, request.DecidedBy)
             .Set(e => e.Result, request.Result)
             .Set(e => e.Error, request.Error)
-            .Where(e => e.Id == request.Id)
-            .ExecuteAffrowsAsync();
+            .Where(e => e.Id == request.Id);
+        update = writingBackToPending
+            ? update.Where(e => e.Status == ApprovalStatus.Pending)
+            : update.Where(e => e.Status != ApprovalStatus.Executed
+                && e.Status != ApprovalStatus.Failed
+                && e.Status != ApprovalStatus.Rejected);
+        var affected = await update.ExecuteAffrowsAsync();
+        if (affected == 0)
+        {
+            var current = await db.Select<ApprovalRequestEntity>().Where(e => e.Id == request.Id).FirstAsync();
+            throw new NexMesh.MeshException(
+                $"审批单 {request.Id} 状态 {current?.Status.ToString() ?? "不存在"} 不允许写回为 {request.Status}(状态机单调守卫)", 40903, 409);
+        }
         return request;
     }
 

@@ -1,0 +1,83 @@
+namespace NexMesh.Events
+{
+    public sealed class EventContext
+    {
+        public EventContext(string eventId, object? payload, NexMesh.Core.Context.NexMeshContext? context, System.DateTimeOffset createdAt, System.Threading.CancellationToken cancellationToken) { }
+        public System.Threading.CancellationToken CancellationToken { get; }
+        public NexMesh.Core.Context.NexMeshContext? Context { get; }
+        public System.DateTimeOffset CreatedAt { get; }
+        public string EventId { get; }
+        public object? Payload { get; }
+        public T? GetPayload<T>() { }
+    }
+    public sealed class EventLogFaultHandler : NexMesh.Events.IEventFaultHandler
+    {
+        public EventLogFaultHandler(Microsoft.Extensions.Logging.ILogger<NexMesh.Events.EventLogFaultHandler> logger) { }
+        public System.Threading.Tasks.Task HandleAsync(NexMesh.Events.EventContext context, string handlerName, System.Exception exception, System.Threading.CancellationToken cancellationToken) { }
+    }
+    public sealed class EventLogMonitor : NexMesh.Events.IEventMonitor
+    {
+        public EventLogMonitor(Microsoft.Extensions.Logging.ILogger<NexMesh.Events.EventLogMonitor> logger) { }
+        public System.Threading.Tasks.Task OnExecutedAsync(NexMesh.Events.EventContext context, string handlerName, System.Exception? exception, System.Threading.CancellationToken cancellationToken) { }
+        public System.Threading.Tasks.Task OnExecutingAsync(NexMesh.Events.EventContext context, string handlerName, System.Threading.CancellationToken cancellationToken) { }
+    }
+    [System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple=true)]
+    public sealed class EventSubscribeAttribute : System.Attribute
+    {
+        public EventSubscribeAttribute(object eventId) { }
+        public EventSubscribeAttribute(string eventId) { }
+        public string EventId { get; }
+        public System.Type[]? ExceptionTypes { get; set; }
+        public bool FuzzyMatch { get; set; }
+        public int NumRetries { get; set; }
+        public int RetryTimeoutMs { get; set; }
+    }
+    public sealed class EventWorkItem : System.IEquatable<NexMesh.Events.EventWorkItem>
+    {
+        public EventWorkItem(string EventId, object? Payload, NexMesh.Core.Context.NexMeshContext? Context, System.DateTimeOffset CreatedAt) { }
+        public NexMesh.Core.Context.NexMeshContext? Context { get; init; }
+        public System.DateTimeOffset CreatedAt { get; init; }
+        public string EventId { get; init; }
+        public object? Payload { get; init; }
+    }
+    public interface IEventFaultHandler
+    {
+        System.Threading.Tasks.Task HandleAsync(NexMesh.Events.EventContext context, string handlerName, System.Exception exception, System.Threading.CancellationToken cancellationToken);
+    }
+    public interface IEventMonitor
+    {
+        System.Threading.Tasks.Task OnExecutedAsync(NexMesh.Events.EventContext context, string handlerName, System.Exception? exception, System.Threading.CancellationToken cancellationToken);
+        System.Threading.Tasks.Task OnExecutingAsync(NexMesh.Events.EventContext context, string handlerName, System.Threading.CancellationToken cancellationToken);
+    }
+    public interface IEventPublisher
+    {
+        System.Threading.Tasks.Task PublishAsync(System.Enum eventId, object? payload = null, System.Threading.CancellationToken cancellationToken = default);
+        System.Threading.Tasks.Task PublishAsync(string eventId, object? payload = null, System.Threading.CancellationToken cancellationToken = default);
+    }
+    public interface IEventSubscriber { }
+    public sealed class NexMeshEventBusHostedService : Microsoft.Extensions.Hosting.BackgroundService
+    {
+        public NexMeshEventBusHostedService(System.Threading.Channels.Channel<NexMesh.Events.EventWorkItem> channel, Microsoft.Extensions.Options.IOptions<NexMesh.Events.NexMeshEventsOptions> options, System.Collections.Generic.IEnumerable<System.Type> subscriberTypes, NexMesh.Core.Context.INexMeshBackgroundRunner runner, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILogger<NexMesh.Events.NexMeshEventBusHostedService>? logger = null) { }
+        protected override System.Threading.Tasks.Task ExecuteAsync(System.Threading.CancellationToken stoppingToken) { }
+        public override System.Threading.Tasks.Task StopAsync(System.Threading.CancellationToken cancellationToken) { }
+    }
+    public sealed class NexMeshEventPublisher : NexMesh.Events.IEventPublisher
+    {
+        public NexMeshEventPublisher(System.Threading.Channels.ChannelWriter<NexMesh.Events.EventWorkItem> writer, NexMesh.Core.Context.INexMeshContextAccessor contextAccessor, System.TimeProvider timeProvider) { }
+        public System.Threading.Tasks.Task PublishAsync(System.Enum eventId, object? payload = null, System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task PublishAsync(string eventId, object? payload = null, System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class NexMeshEventsOptions
+    {
+        public const string SectionName = "NexMesh:Events";
+        public NexMeshEventsOptions() { }
+        public int Capacity { get; set; }
+        public int Concurrency { get; set; }
+        public int DrainTimeoutSeconds { get; set; }
+        public bool Unicast { get; set; }
+    }
+    public static class NexMeshEventsServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshEvents(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration, System.Action<NexMesh.Events.NexMeshEventsOptions>? configure = null, params System.Reflection.Assembly[] subscriberAssemblies) { }
+    }
+}

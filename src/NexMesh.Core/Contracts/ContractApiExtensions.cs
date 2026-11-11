@@ -175,7 +175,8 @@ public static class ContractApiExtensions
         var bodyCandidates = bindable.Where(p => !AutoApiDispatcher.IsSimple(p.ParameterType)
             && p.ParameterType != typeof(Microsoft.AspNetCore.Http.IFormFile)
             && p.ParameterType != typeof(Microsoft.AspNetCore.Http.IFormFileCollection)
-            && p.GetCustomAttribute<FromFormAttribute>() is null).ToArray();
+            && !AutoApiDispatcher.IsSimpleCollection(p.ParameterType, out _, out _) // 简单集合=Query 绑定,非 Body(SSS+审核:文档漂移修复)
+            && !NexMesh.Core.AutoApi.ContractInvokerCache.HasFromForm(p)).ToArray(); // 探测缓存(与请求路径同一结论源)
         if (bodyCandidates.Length > 1)
         {
             throw new NotSupportedException(

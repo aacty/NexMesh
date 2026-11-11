@@ -1,5 +1,6 @@
 namespace NexMesh.Toolbox;
 
+using System.Text.Json;
 using FreeSql;
 using FreeSql.DataAnnotations;
 using Microsoft.Extensions.Configuration;
@@ -92,33 +93,73 @@ public sealed class LocalFileStorage(string directory) : IFileStorage
     {
         Directory.CreateDirectory(directory);
         var id = Guid.CreateVersion7().ToString("N");
-        var path = Path.Combine(directory, id + ".bin");
-        await using var file = File.Create(path);
+        await using var file = File.Create(BinPath(id));
         await content.CopyToAsync(file, ct);
-        return new FileMetadata(id, name, contentType, file.Length, DateTime.Now);
+        var length = file.Length;
+        // 元数据伴生文件:往返后保留原始文件名/ContentType(id 本身不含用户信息)
+        await File.WriteAllTextAsync(MetaPath(id), FileMeta.Encode(name, contentType), ct);
+        return new FileMetadata(id, name, contentType, length, DateTime.Now);
     }
 
-    public async Task<(Stream, FileMetadata)?> OpenAsync(string id, CancellationToken ct = default)
+    public Task<(Stream, FileMetadata)?> OpenAsync(string id, CancellationToken ct = default)
     {
-        var path = Path.Combine(directory, id + ".bin");
-        if (!File.Exists(path))
+        if (!IsValidId(id) || !File.Exists(BinPath(id)))
         {
-            return null;
+            return Task.FromResult<(Stream, FileMetadata)?>(null);
         }
-        var info = new FileInfo(path);
-        var stream = File.OpenRead(path);
-        return (stream, new FileMetadata(id, id + ".bin", null, info.Length, info.CreationTime));
+        var info = new FileInfo(BinPath(id));
+        var (name, contentType) = FileMeta.TryRead(MetaPath(id));
+        var stream = File.OpenRead(BinPath(id));
+        return Task.FromResult<(Stream, FileMetadata)?>(
+            (stream, new FileMetadata(id, name ?? id + ".bin", contentType, info.Length, info.CreationTime)));
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken ct = default)
     {
-        var path = Path.Combine(directory, id + ".bin");
-        if (!File.Exists(path))
+        if (!IsValidId(id) || !File.Exists(BinPath(id)))
         {
             return Task.FromResult(false);
         }
-        File.Delete(path);
+        File.Delete(BinPath(id));
+        try
+        {
+            File.Delete(MetaPath(id));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 伴生文件删除失败不影响主文件删除结果
+        }
         return Task.FromResult(true);
+    }
+
+    private string BinPath(string id) => Path.Combine(directory, id + ".bin");
+
+    private string MetaPath(string id) => Path.Combine(directory, id + ".meta");
+
+    /// <summary>id 仅接受本实现签发的 32 位小写十六进制(Guid N 格式),防路径遍历(如 "../x" 越界读/删)。</summary>
+    internal static bool IsValidId(string? id) =>
+        id is { Length: 32 } && id.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+
+    private static class FileMeta
+    {
+        public static string Encode(string name, string? contentType) =>
+            JsonSerializer.Serialize(new Meta(name, contentType));
+
+        public static (string? Name, string? ContentType) TryRead(string path)
+        {
+            try
+            {
+                var meta = JsonSerializer.Deserialize<Meta>(File.ReadAllText(path));
+                return (meta?.Name, meta?.ContentType);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                // 伴生文件缺失/损坏(如旧版本落下的数据):退回旧行为,名 = {id}.bin
+                return (null, null);
+            }
+        }
+
+        private sealed record Meta(string Name, string? ContentType);
     }
 }
 

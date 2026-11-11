@@ -2,7 +2,7 @@ namespace NexMesh.Toolbox;
 
 using MiniExcelLibs;
 
-/// <summary>Excel 导入导出(MiniExcel 零模板):首行表头来自属性名(可用 [ExcelColumn] 定制)。</summary>
+/// <summary>Excel 导入导出(MiniExcel 零模板):首行表头来自属性名(可用 [ExcelColumnName]/[ExcelFormat]/[ExcelIgnore] 定制)。</summary>
 public static class NexMeshExcel
 {
     /// <summary>导出到 xlsx 流(内存)。</summary>

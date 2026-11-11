@@ -110,7 +110,7 @@ public static class NexMeshAuthExtensions
             if (validator is null)
             {
                 return Results.Json(
-                    ApiResult<object>.Fail("未配置 ILoginValidator,业务侧需实现并注册登录验证", 500),
+                    ApiResult<object>.Fail("未配置 ILoginValidator,业务侧需实现并注册登录验证", 50004),
                     statusCode: 500);
             }
 

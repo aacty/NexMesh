@@ -101,9 +101,17 @@ public class PublicApiBaselineTests
 {
     [Theory]
     [InlineData(typeof(NexMesh.Core.AutoApi.AutoApiEndpoint), "NexMesh.Core.txt")]
+    [InlineData(typeof(NexMesh.AI.NexMeshAiServiceCollectionExtensions), "NexMesh.AI.txt")]
+    [InlineData(typeof(NexMesh.AI.Approval.NexMeshApprovalExtensions), "NexMesh.AI.Approval.txt")]
+    [InlineData(typeof(NexMesh.AI.SemanticCache.NexMeshSemanticCacheExtensions), "NexMesh.AI.SemanticCache.txt")]
+    [InlineData(typeof(NexMesh.AI.Workflow.NexMeshWorkflowExtensions), "NexMesh.AI.Workflow.txt")]
     [InlineData(typeof(NexMesh.Auth.LoginRateLimiter), "NexMesh.Auth.txt")]
+    [InlineData(typeof(NexMesh.Cache.NexMeshCacheSource), "NexMesh.Cache.txt")]
     [InlineData(typeof(NexMesh.Data.NexMeshDbServiceCollectionExtensions), "NexMesh.Data.FreeSql.txt")]
+    [InlineData(typeof(NexMesh.Events.NexMeshEventsServiceCollectionExtensions), "NexMesh.Events.txt")]
     [InlineData(typeof(NexMeshHostExtensions), "NexMesh.Host.txt")]
+    [InlineData(typeof(NexMesh.Toolbox.NexMeshExcel), "NexMesh.Toolbox.txt")]
+    [InlineData(typeof(NexMesh.Worker.NexMeshWorkerExtensions), "NexMesh.Worker.txt")]
     public void 公共API面_与基线一致(System.Type markerType, string baselineFile)
     {
         var publicApi = markerType.Assembly.GeneratePublicApi(new ApiGeneratorOptions

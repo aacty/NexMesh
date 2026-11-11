@@ -11,12 +11,24 @@ public sealed class HashEmbedder : ISemanticEmbedder
 
     public Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
     {
-        // 确定性字符频率 → 256 维向量(相同文本→相同向量;完全不同文本→近似正交)
+        // 确定性嵌入:字符频率 + 内容哈希折叠(相同文本→相同向量)。
+        // SSS+交叉审核修复:纯位置分桶在 ≥257 字符可构造逐位相同向量(半块交换/分桶和相等),
+        // 折叠 64 位 FNV 内容哈希入前 8 维——任意不同文本向量几乎必然不同。
         var vector = new float[Dimensions];
         var normalized = text.Trim().ToLowerInvariant();
         for (var i = 0; i < normalized.Length; i++)
         {
             vector[i % Dimensions] += normalized[i]; // 字符频率
+        }
+        ulong hash = 14695981039346656037UL;
+        foreach (var ch in normalized)
+        {
+            hash ^= ch;
+            hash *= 1099511628211UL;
+        }
+        for (var k = 0; k < 8; k++)
+        {
+            vector[k] += ((hash >> (k << 3)) & 0xFF) + 1; // 字节折叠(+1 避免零贡献)
         }
         // L2 归一化(余弦度量下向量长度归一)
         double norm = 0;

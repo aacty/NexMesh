@@ -1,0 +1,142 @@
+namespace NexMesh.Cache
+{
+    public sealed class CacheKeyInfo : System.IEquatable<NexMesh.Cache.CacheKeyInfo>
+    {
+        public CacheKeyInfo(string Key, long? TtlSeconds) { }
+        public string Key { get; init; }
+        public long? TtlSeconds { get; init; }
+    }
+    public abstract class CacheSourceBase
+    {
+        protected CacheSourceBase(NexMesh.Cache.ICacheSource cache, NexMesh.Cache.CacheSourceOptions options) { }
+        protected NexMesh.Cache.ICacheSource Cache { get; }
+        protected string KeyPrefix { get; }
+        public bool Exists(string key) { }
+        protected virtual string FullKey(string key) { }
+        public T? Get<T>(string key) { }
+        public System.Threading.Tasks.Task<T?> GetAsync<T>(string key, System.Threading.CancellationToken ct = default) { }
+        public string? GetString(string key) { }
+        public System.Threading.Tasks.Task<string?> GetStringAsync(string key, System.Threading.CancellationToken ct = default) { }
+        public void Remove(string key) { }
+        public System.Threading.Tasks.Task RemoveAsync(string key, System.Threading.CancellationToken ct = default) { }
+        public void Set<T>(string key, T value, int? expireSeconds = default) { }
+        public System.Threading.Tasks.Task SetAsync<T>(string key, T value, int? expireSeconds = default, System.Threading.CancellationToken ct = default) { }
+        public void SetString(string key, string value, int? expireSeconds = default) { }
+        public System.Threading.Tasks.Task SetStringAsync(string key, string value, int? expireSeconds = default, System.Threading.CancellationToken ct = default) { }
+    }
+    public static class CacheSourceExtensions
+    {
+        public static NexMesh.Core.NexMeshBuilder AddCacheSource<TSource>(this NexMesh.Core.NexMeshBuilder builder, NexMesh.Cache.CacheSourceOptions options)
+            where TSource :  class { }
+    }
+    public sealed class CacheSourceOptions
+    {
+        public CacheSourceOptions() { }
+        public string ConnectionString { get; set; }
+        public int DefaultTtlSeconds { get; set; }
+        public string KeyPrefix { get; set; }
+        public int L1TtlSeconds { get; set; }
+    }
+    public interface ICacheFactory
+    {
+        System.Collections.Generic.IReadOnlyList<string> SourceNames { get; }
+        NexMesh.Cache.ICacheSource Get(string name = "main");
+    }
+    public interface ICacheInspection
+    {
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Cache.CacheKeyInfo>> ListKeysAsync(string keyPrefix, int limit = 200, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<bool> RemoveKeyAsync(string key, System.Threading.CancellationToken ct = default);
+    }
+    public interface ICacheLock : System.IAsyncDisposable, System.IDisposable
+    {
+        System.Threading.Tasks.Task<bool> RenewAsync(System.TimeSpan ttl, System.Threading.CancellationToken ct = default);
+    }
+    public interface ICacheSource
+    {
+        System.Threading.Tasks.Task<T?> GetAsync<T>(string key, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<T> GetOrCreateAsync<T>(string key, System.TimeSpan? ttl, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<T>> factory, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task RemoveAsync(string key, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task SetAsync<T>(string key, T value, System.TimeSpan? ttl = default, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<NexMesh.Cache.ICacheLock?> TryLockAsync(string key, System.TimeSpan ttl, System.Threading.CancellationToken ct = default);
+    }
+    public class IdempotencyMiddleware
+    {
+        public IdempotencyMiddleware(Microsoft.AspNetCore.Http.RequestDelegate next) { }
+        public System.Threading.Tasks.Task InvokeAsync(Microsoft.AspNetCore.Http.HttpContext context, NexMesh.Cache.ICacheFactory cacheFactory) { }
+        public sealed class IdempotentResponse : System.IEquatable<NexMesh.Cache.IdempotencyMiddleware.IdempotentResponse>
+        {
+            public IdempotentResponse(int Status, string ContentType, string Body) { }
+            public string Body { get; init; }
+            public string ContentType { get; init; }
+            public int Status { get; init; }
+        }
+    }
+    public sealed class NexMeshCacheOptions
+    {
+        public NexMeshCacheOptions() { }
+        public string Mode { get; set; }
+        public System.Collections.Generic.Dictionary<string, NexMesh.Cache.CacheSourceOptions> Sources { get; set; }
+    }
+    public static class NexMeshCacheServiceCollectionExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshCache(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration) { }
+        public static Microsoft.AspNetCore.Builder.IApplicationBuilder UseNexMeshIdempotency(this Microsoft.AspNetCore.Builder.IApplicationBuilder app) { }
+    }
+    public sealed class NexMeshCacheSource : NexMesh.Cache.ICacheInspection, NexMesh.Cache.ICacheSource, System.IDisposable
+    {
+        public NexMeshCacheSource(NexMesh.Cache.CacheSourceOptions options, StackExchange.Redis.IConnectionMultiplexer? redis) { }
+        public void Dispose() { }
+        public System.Threading.Tasks.Task<T?> GetAsync<T>(string key, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<T> GetOrCreateAsync<T>(string key, System.TimeSpan? ttl, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<T>> factory, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Cache.CacheKeyInfo>> ListKeysAsync(string keyPrefix, int limit = 200, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task RemoveAsync(string key, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<bool> RemoveKeyAsync(string key, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task SetAsync<T>(string key, T value, System.TimeSpan? ttl = default, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<NexMesh.Cache.ICacheLock?> TryLockAsync(string key, System.TimeSpan ttl, System.Threading.CancellationToken ct = default) { }
+    }
+}
+namespace NexMesh.Discovery
+{
+    public sealed class HeartbeatService : Microsoft.Extensions.Hosting.BackgroundService
+    {
+        public HeartbeatService(NexMesh.Discovery.IServiceRegistry registry, NexMesh.Discovery.ServiceInstance self, System.TimeSpan ttl, Microsoft.Extensions.Logging.ILogger<NexMesh.Discovery.HeartbeatService>? logger = null) { }
+        protected override System.Threading.Tasks.Task ExecuteAsync(System.Threading.CancellationToken stoppingToken) { }
+    }
+    public interface IServiceRegistry
+    {
+        System.Threading.Tasks.Task DeregisterAsync(string serviceName, string instanceId, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Discovery.ServiceInstance>> DiscoverAsync(string serviceName, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task RegisterAsync(NexMesh.Discovery.ServiceInstance instance, System.Threading.CancellationToken ct = default);
+    }
+    public static class NexMeshDiscoveryExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshServiceDiscovery(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, string redisConnectionString, System.Action<NexMesh.Discovery.ServiceInstanceBuilder> configureSelf, string keyPrefix = "nexmesh:disc:", int ttlSeconds = 30) { }
+    }
+    public sealed class RedisServiceRegistry : NexMesh.Discovery.IServiceRegistry
+    {
+        public RedisServiceRegistry(StackExchange.Redis.IConnectionMultiplexer redis, string prefix = "nexmesh:disc:", System.TimeSpan? ttl = default) { }
+        public System.Threading.Tasks.Task DeregisterAsync(string serviceName, string instanceId, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.Discovery.ServiceInstance>> DiscoverAsync(string serviceName, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task RegisterAsync(NexMesh.Discovery.ServiceInstance instance, System.Threading.CancellationToken ct = default) { }
+    }
+    public sealed class ServiceInstance : System.IEquatable<NexMesh.Discovery.ServiceInstance>
+    {
+        public ServiceInstance() { }
+        public string Address { get; init; }
+        public string? GrpcAddress { get; init; }
+        public string InstanceId { get; init; }
+        public System.DateTimeOffset LastHeartbeat { get; init; }
+        public System.Collections.Generic.Dictionary<string, string> Metadata { get; init; }
+        public string ServiceName { get; init; }
+    }
+    public sealed class ServiceInstanceBuilder
+    {
+        public ServiceInstanceBuilder() { }
+        public string Address { get; set; }
+        public string? GrpcAddress { get; set; }
+        public string InstanceId { get; set; }
+        public System.Collections.Generic.Dictionary<string, string> Metadata { get; }
+        public string ServiceName { get; set; }
+        public NexMesh.Discovery.ServiceInstance Build() { }
+    }
+}

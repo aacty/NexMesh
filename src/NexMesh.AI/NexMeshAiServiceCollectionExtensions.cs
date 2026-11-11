@@ -57,6 +57,13 @@ public static class NexMeshAiServiceCollectionExtensions
                 throw new InvalidOperationException(
                     $"[NexMesh AI] Provider '{name}' 的 Endpoint 不是合法的绝对 URI:{config.Endpoint}");
             }
+            // SSS+交叉审核:未知 Type 启动即 fail-fast(此前静默落 openai-compatible 分支,首次调用才暴露)
+            if (!config.Type.Equals("stub", StringComparison.OrdinalIgnoreCase)
+                && !config.Type.Equals("openai-compatible", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"[NexMesh AI] Provider '{name}' 的 Type '{config.Type}' 不受支持(NexMesh:AI:Providers:{name}:Type;支持 stub / openai-compatible)。");
+            }
 
             if (config.Type.Equals("stub", StringComparison.OrdinalIgnoreCase))
             {

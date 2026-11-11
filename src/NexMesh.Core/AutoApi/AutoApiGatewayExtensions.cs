@@ -67,12 +67,12 @@ public static class AutoApiGatewayExtensions
             if (table.ContainsPath(path, verb))
             {
                 context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
-                await WriteErrorAsync(context.Response, $"逻辑路由 '{path}' 不支持 {verb} 动词(虚拟网关)", 405);
+                await WriteErrorAsync(context.Response, $"逻辑路由 '{path}' 不支持 {verb} 动词(虚拟网关)", 40500);
                 return;
             }
 
             context.Response.StatusCode = StatusCodes.Status404NotFound;
-            await WriteErrorAsync(context.Response, $"逻辑路由 '{path}' 未注册(虚拟网关)", 404);
+            await WriteErrorAsync(context.Response, $"逻辑路由 '{path}' 未注册(虚拟网关)", 40400);
         });
 
         return endpoints;

@@ -12,6 +12,10 @@
     <ProjectReference Include="..\..\src\NexMesh.Data.FreeSql\NexMesh.Data.FreeSql.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Cache\NexMesh.Cache.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Events\NexMesh.Events.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI.SemanticCache\NexMesh.AI.SemanticCache.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.AI.Workflow\NexMesh.AI.Workflow.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Toolbox\NexMesh.Toolbox.csproj" />
+    <ProjectReference Include="..\..\src\NexMesh.Worker\NexMesh.Worker.csproj" />
     <ProjectReference Include="..\..\src\NexMesh.Host\NexMesh.Host.csproj" />
   </ItemGroup>
 

@@ -18,6 +18,16 @@ public interface INexMeshBackgroundRunner
         NexMeshContext? context,
         Func<IServiceProvider, CancellationToken, Task> work,
         CancellationToken cancellationToken = default);
+
+    /// <summary>停机排干专用分发:五步纪律同 RunAsync,但令牌**不与宿主停机令牌联动**——
+    /// 排干阶段宿主 ApplicationStopping 已触发,联动会使联合令牌创建即取消(SSS+交叉审核实证),
+    /// 支持取消的处理器永远拿不到"新鲜令牌"。调用方自带限时令牌(排干超时语义由调用方负责)。
+    /// 默认实现委托 RunAsync(与既有行为一致,自定义实现者零破坏)。</summary>
+    Task RunDrainAsync(
+        NexMeshContext? context,
+        Func<IServiceProvider, CancellationToken, Task> work,
+        CancellationToken cancellationToken)
+        => RunAsync(context, work, cancellationToken);
 }
 
 public sealed class NexMeshBackgroundRunner(
@@ -51,5 +61,27 @@ public sealed class NexMeshBackgroundRunner(
         using var scope = rootProvider.CreateScope();
 
         await work(scope.ServiceProvider, linked.Token);
+    }
+
+    /// <summary>排干分发:同五步纪律,唯一差异=令牌只用调用方传入的(不联动 ApplicationStopping)。</summary>
+    public async Task RunDrainAsync(
+        NexMeshContext? context,
+        Func<IServiceProvider, CancellationToken, Task> work,
+        CancellationToken cancellationToken)
+    {
+        using var activity = Source.StartActivity(
+            "nexmesh.background.drain",
+            ActivityKind.Consumer,
+            parentContext: context?.TraceContext ?? default);
+        if (activity is not null)
+        {
+            activity.SetTag("nexmesh.context.user_id", context?.UserId);
+            activity.SetTag("nexmesh.context.tenant_id", context?.TenantId);
+        }
+
+        using var ambient = ContextSlotBinding.Enter(accessor, context);
+        using var scope = rootProvider.CreateScope();
+
+        await work(scope.ServiceProvider, cancellationToken);
     }
 }

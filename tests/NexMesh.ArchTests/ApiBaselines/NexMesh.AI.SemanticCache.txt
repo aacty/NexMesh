@@ -1,0 +1,52 @@
+namespace NexMesh.AI.SemanticCache
+{
+    public interface ISemanticVectorStore
+    {
+        System.Threading.Tasks.Task AddAsync(string scope, string key, float[] vector, string payload, System.TimeSpan? ttl = default, System.Threading.CancellationToken ct = default);
+        System.Threading.Tasks.Task<NexMesh.AI.SemanticCache.SemanticMatch?> SearchAsync(string scope, float[] queryVector, double threshold, System.Threading.CancellationToken ct = default);
+    }
+    public sealed class InMemorySemanticStore : NexMesh.AI.SemanticCache.ISemanticVectorStore
+    {
+        public InMemorySemanticStore() { }
+        public System.Threading.Tasks.Task AddAsync(string scope, string key, float[] vector, string payload, System.TimeSpan? ttl = default, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.SemanticCache.SemanticMatch?> SearchAsync(string scope, float[] queryVector, double threshold, System.Threading.CancellationToken ct = default) { }
+    }
+    public static class NexMeshSemanticCacheExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshSemanticCache(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration) { }
+    }
+    public sealed class RedisSemanticStore : NexMesh.AI.SemanticCache.ISemanticVectorStore
+    {
+        public RedisSemanticStore(StackExchange.Redis.IConnectionMultiplexer redis, string keyPrefix) { }
+        public System.Threading.Tasks.Task AddAsync(string scope, string key, float[] vector, string payload, System.TimeSpan? ttl = default, System.Threading.CancellationToken ct = default) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.SemanticCache.SemanticMatch?> SearchAsync(string scope, float[] queryVector, double threshold, System.Threading.CancellationToken ct = default) { }
+    }
+    public sealed class SemanticCacheChatClient : Microsoft.Extensions.AI.DelegatingChatClient
+    {
+        public SemanticCacheChatClient(Microsoft.Extensions.AI.IChatClient inner, NexMesh.AI.Tools.ISemanticEmbedder embedder, NexMesh.AI.SemanticCache.ISemanticVectorStore store, NexMesh.AI.SemanticCache.SemanticCacheOptions options, Microsoft.Extensions.Logging.ILogger<NexMesh.AI.SemanticCache.SemanticCacheChatClient>? logger = null) { }
+        public override System.Threading.Tasks.Task<Microsoft.Extensions.AI.ChatResponse> GetResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? chatOptions = null, System.Threading.CancellationToken cancellationToken = default) { }
+        [System.Runtime.CompilerServices.AsyncIteratorStateMachine(typeof(NexMesh.AI.SemanticCache.SemanticCacheChatClient.<GetStreamingResponseAsync>d__11))]
+        public override System.Collections.Generic.IAsyncEnumerable<Microsoft.Extensions.AI.ChatResponseUpdate> GetStreamingResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions? chatOptions = null, [System.Runtime.CompilerServices.EnumeratorCancellation] System.Threading.CancellationToken cancellationToken = default) { }
+    }
+    public sealed class SemanticCacheOptions
+    {
+        public SemanticCacheOptions() { }
+        public bool Enabled { get; set; }
+        public string KeyPrefix { get; set; }
+        public string Store { get; set; }
+        public double Threshold { get; set; }
+        public int TtlSeconds { get; set; }
+    }
+    public sealed class SemanticCacheWrapper : NexMesh.AI.ISemanticCacheWrapper
+    {
+        public SemanticCacheWrapper(NexMesh.AI.Tools.ISemanticEmbedder embedder, NexMesh.AI.SemanticCache.ISemanticVectorStore store, NexMesh.AI.SemanticCache.SemanticCacheOptions options, Microsoft.Extensions.Logging.ILogger<NexMesh.AI.SemanticCache.SemanticCacheChatClient>? logger = null) { }
+        public Microsoft.Extensions.AI.IChatClient Wrap(Microsoft.Extensions.AI.IChatClient inner) { }
+    }
+    public sealed class SemanticMatch : System.IEquatable<NexMesh.AI.SemanticCache.SemanticMatch>
+    {
+        public SemanticMatch(string Key, string Payload, double Similarity) { }
+        public string Key { get; init; }
+        public string Payload { get; init; }
+        public double Similarity { get; init; }
+    }
+}

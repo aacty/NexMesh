@@ -99,7 +99,7 @@ public class ContractApiTests(TestApi api) : IClassFixture<TestApi>
 public class ExceptionMiddlewareTests(TestApi api) : IClassFixture<TestApi>
 {
     [Fact]
-    public async Task MeshException_状态码透传_code为HTTP状态码()
+    public async Task MeshException_状态码透传_HTTP400信封带细粒度码()
     {
         var response = await api.Client.PostAsync("/api/Throw/Biz", content: null);
 
@@ -107,7 +107,7 @@ public class ExceptionMiddlewareTests(TestApi api) : IClassFixture<TestApi>
         Assert.True(response.Headers.Contains("X-Trace-Id"));
         var result = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
         Assert.False(result.GetProperty("success").GetBoolean());
-        Assert.Equal(400, result.GetProperty("code").GetInt32());
+        Assert.Equal(40002, result.GetProperty("code").GetInt32()); // 信封 Code=细粒度 ErrorCode(HTTP 状态仍 400)
         Assert.Equal("金额必须大于 0", result.GetProperty("message").GetString());
     }
 
@@ -118,7 +118,7 @@ public class ExceptionMiddlewareTests(TestApi api) : IClassFixture<TestApi>
 
         Assert.Equal(System.Net.HttpStatusCode.InternalServerError, response.StatusCode);
         var result = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
-        Assert.Equal(500, result.GetProperty("code").GetInt32());
+        Assert.Equal(50000, result.GetProperty("code").GetInt32());
         Assert.StartsWith("服务器内部错误", result.GetProperty("message").GetString());
         Assert.DoesNotContain("boom", result.GetProperty("message").GetString());
     }

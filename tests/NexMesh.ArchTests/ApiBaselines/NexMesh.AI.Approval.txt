@@ -1,0 +1,107 @@
+namespace NexMesh.AI.Approval
+{
+    public class ApprovalDecisionRequest : System.IEquatable<NexMesh.AI.Approval.ApprovalDecisionRequest>
+    {
+        public ApprovalDecisionRequest(string? DecidedBy) { }
+        public string? DecidedBy { get; init; }
+    }
+    public sealed class ApprovalDecisionService
+    {
+        public ApprovalDecisionService(NexMesh.AI.Approval.IApprovalStore store, NexMesh.AI.Tools.INexMeshToolRegistry toolRegistry, NexMesh.Core.Context.INexMeshBackgroundRunner runner, Microsoft.Extensions.Logging.ILogger<NexMesh.AI.Approval.ApprovalDecisionService>? logger) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> ApproveAsync(string id, string decidedBy) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> RejectAsync(string id, string decidedBy) { }
+    }
+    public sealed class ApprovalGate : NexMesh.AI.Tools.IToolApprovalGate
+    {
+        public ApprovalGate(NexMesh.AI.Approval.IApprovalStore store, NexMesh.Core.Context.INexMeshContextAccessor contextAccessor) { }
+        public System.Threading.Tasks.Task<string> EnqueueAsync(string toolName, string description, System.Collections.Generic.IReadOnlyDictionary<string, object?> arguments) { }
+    }
+    public sealed class ApprovalRequest : System.IEquatable<NexMesh.AI.Approval.ApprovalRequest>
+    {
+        public ApprovalRequest() { }
+        public string ArgumentsJson { get; init; }
+        public System.Collections.Generic.IReadOnlyDictionary<string, string> ContextHeaders { get; init; }
+        public System.DateTime CreatedAt { get; init; }
+        public System.DateTime? DecidedAt { get; init; }
+        public string? DecidedBy { get; init; }
+        public string Description { get; init; }
+        public string? Error { get; init; }
+        public string Id { get; init; }
+        public string IdempotencyKey { get; init; }
+        public string? Result { get; init; }
+        public NexMesh.AI.Approval.ApprovalStatus Status { get; init; }
+        public string ToolName { get; init; }
+        public static string ComputeIdempotencyKey(string toolName, string argumentsJson) { }
+    }
+    [FreeSql.DataAnnotations.Table(Name="nexmesh_approvals")]
+    public class ApprovalRequestEntity
+    {
+        public ApprovalRequestEntity() { }
+        [FreeSql.DataAnnotations.Column(StringLength=-1)]
+        public string ArgumentsJson { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=-1)]
+        public string ContextHeadersJson { get; set; }
+        public System.DateTime CreatedAt { get; set; }
+        public System.DateTime? DecidedAt { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=128)]
+        public string? DecidedBy { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=1024)]
+        public string Description { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=-1)]
+        public string? Error { get; set; }
+        [FreeSql.DataAnnotations.Column(IsPrimary=true, StringLength=64)]
+        public string Id { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=128)]
+        public string IdempotencyKey { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=-1)]
+        public string? Result { get; set; }
+        public NexMesh.AI.Approval.ApprovalStatus Status { get; set; }
+        [FreeSql.DataAnnotations.Column(StringLength=256)]
+        public string ToolName { get; set; }
+    }
+    public enum ApprovalStatus
+    {
+        Pending = 0,
+        Approved = 1,
+        Rejected = 2,
+        Executed = 3,
+        Failed = 4,
+    }
+    public sealed class FreeSqlApprovalStore : NexMesh.AI.Approval.IApprovalStore
+    {
+        public FreeSqlApprovalStore(IFreeSql db) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> AddAsync(NexMesh.AI.Approval.ApprovalRequest request) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> ClaimForDecisionAsync(string id, NexMesh.AI.Approval.ApprovalStatus decision, string decidedBy) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> FindPendingByIdempotencyKeyAsync(string idempotencyKey) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> GetAsync(string id) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Approval.ApprovalRequest>> ListHistoryAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Approval.ApprovalRequest>> ListPendingAsync() { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> UpdateAsync(NexMesh.AI.Approval.ApprovalRequest request) { }
+    }
+    public interface IApprovalStore
+    {
+        System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> AddAsync(NexMesh.AI.Approval.ApprovalRequest request);
+        System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> ClaimForDecisionAsync(string id, NexMesh.AI.Approval.ApprovalStatus decision, string decidedBy);
+        System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> FindPendingByIdempotencyKeyAsync(string idempotencyKey);
+        System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> GetAsync(string id);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Approval.ApprovalRequest>> ListHistoryAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default);
+        System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Approval.ApprovalRequest>> ListPendingAsync();
+        System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> UpdateAsync(NexMesh.AI.Approval.ApprovalRequest request);
+    }
+    public sealed class InMemoryApprovalStore : NexMesh.AI.Approval.IApprovalStore
+    {
+        public InMemoryApprovalStore() { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> AddAsync(NexMesh.AI.Approval.ApprovalRequest request) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> ClaimForDecisionAsync(string id, NexMesh.AI.Approval.ApprovalStatus decision, string decidedBy) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> FindPendingByIdempotencyKeyAsync(string idempotencyKey) { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest?> GetAsync(string id) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Approval.ApprovalRequest>> ListHistoryAsync(int limit = 20, System.Threading.CancellationToken cancellationToken = default) { }
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<NexMesh.AI.Approval.ApprovalRequest>> ListPendingAsync() { }
+        public System.Threading.Tasks.Task<NexMesh.AI.Approval.ApprovalRequest> UpdateAsync(NexMesh.AI.Approval.ApprovalRequest request) { }
+    }
+    public static class NexMeshApprovalExtensions
+    {
+        public static Microsoft.Extensions.DependencyInjection.IServiceCollection AddNexMeshApproval(this Microsoft.Extensions.DependencyInjection.IServiceCollection services, Microsoft.Extensions.Configuration.IConfiguration configuration) { }
+        public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder MapNexMeshApprovals(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints, bool requireAuthorization = true) { }
+    }
+}

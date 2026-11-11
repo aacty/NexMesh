@@ -48,13 +48,26 @@ public sealed class NexMeshCacheSource : ICacheSource, ICacheInspection, IDispos
         }
         var fullKey = _prefix + key;
         var bytes = JsonSerializer.SerializeToUtf8Bytes(value, Json);
-        if (_l1Ttl is not null)
-        {
-            _l1.Set(fullKey, bytes, _l1Ttl.Value);
-        }
         if (_redis is not null)
         {
+            // 混合模式:L1=热窗(_l1Ttl),L2=Redis(ttl ?? 默认)
+            if (_l1Ttl is not null)
+            {
+                _l1.Set(fullKey, bytes, _l1Ttl.Value);
+            }
             await _redis.StringSetAsync(fullKey, bytes, ttl ?? _defaultTtl);
+            return;
+        }
+        // SSS+交叉审核(L 幂等回放实测):纯内存模式(_redis=null)下 L1 即主存——原实现
+        // 未配 L1Ttl 时 Set 静默丢弃、TTL 参数被忽略。TTL=调用方 ttl ?? 默认;均未配置 → 永不过期。
+        var memTtl = ttl ?? (_defaultTtl > TimeSpan.Zero ? _defaultTtl : null);
+        if (memTtl is not null)
+        {
+            _l1.Set(fullKey, bytes, memTtl.Value);
+        }
+        else
+        {
+            _l1.Set(fullKey, bytes);
         }
     }
 
@@ -81,10 +94,25 @@ public sealed class NexMeshCacheSource : ICacheSource, ICacheInspection, IDispos
         }
 
         var gate = StripeLocks[(uint)key.GetHashCode() % StripeLocks.Length];
-        var held = await gate.WaitAsync(300, ct); // 短时有界等待:极端争用降级并发回源(best-effort)
+        var held = await gate.WaitAsync(300, ct); // 短时等待:同 Key 并发只放一个回源
         try
         {
-            // 双检查:拿到锁(或等待超时)后必复查——前一个回源者大概率已填充
+            if (!held)
+            {
+                // L 第三轮交叉测试实证:回源耗时 > 300ms 等待窗时,原实现超时即放行并发回源,
+                // 32 并发慢回源被放大为 ~32 次底层加载(击穿防护在最需要它的慢回源场景失效)。
+                // 修复:超时后复查+续等循环(300ms×32≈10s 总预算),回源者完成后下窗即命中;
+                // 预算耗尽(回源者死亡/极端慢)才降级并发回源——保留原 best-effort 语义兜底。
+                for (var round = 0; round < 32 && !(held = await gate.WaitAsync(300, ct)); round++)
+                {
+                    var (hit, hitValue) = await TryGetAsync<T>(key, ct);
+                    if (hit)
+                    {
+                        return hitValue!;
+                    }
+                }
+            }
+            // 双检查:拿到锁(或预算耗尽)后必复查——前一个回源者大概率已填充
             var (again, againValue) = await TryGetAsync<T>(key, ct);
             if (again)
             {
@@ -205,8 +233,14 @@ public async Task<List<CacheKeyInfo>> ListKeysAsync(string keyPrefix, int limit 
 /// <summary>删除单键:同时清 L1 与 L2(键以源 KeyPrefix 为界)。</summary>
 public async Task<bool> RemoveKeyAsync(string key, CancellationToken ct = default)
 {
+    // SSS+交叉审核(H-P3):内存模式诚实化——先查存在再删(不存在键=false),与 Redis
+    // KeyDeleteAsync 返回值语义一致;此前内存分支恒 true,"不存在"与"已删"不可区分
+    var existed = _l1.TryGetValue(_prefix + key, out _);
     _l1.Remove(_prefix + key);
-    if (_redis is null) return true;
+    if (_redis is null)
+    {
+        return existed;
+    }
     return await _redis.KeyDeleteAsync(_prefix + key);
 }
 
@@ -217,6 +251,11 @@ public async Task<bool> RemoveKeyAsync(string key, CancellationToken ct = defaul
         private const string ReleaseScript =
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
 
+        // 令牌匹配才续期(L 第三轮交叉测试实证:裸 KeyExpireAsync 不校验持有者——锁过期被他人接管后,
+        // 陈旧锁对象续期=给他人锁续命,TTL 被拉长至续期值,新持有者名存实亡)。与迁移锁 RenewScript 同一语义。
+        private const string RenewScript =
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end";
+
         public async ValueTask DisposeAsync() =>
             await redis.ScriptEvaluateAsync(ReleaseScript,
                 keys: [(StackExchange.Redis.RedisKey)key],
@@ -224,9 +263,14 @@ public async Task<bool> RemoveKeyAsync(string key, CancellationToken ct = defaul
 
         public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
-        /// <summary>延长锁 TTL(对真实锁键执行 PEXPIRE 语义,非覆盖写入)。</summary>
-        public Task<bool> RenewAsync(TimeSpan ttl, CancellationToken ct = default) =>
-            redis.KeyExpireAsync(key, ttl);
+        /// <summary>延长锁 TTL:Lua 校验令牌后 PEXPIRE;他人锁/已过期键 → false(幂等拒绝,非覆盖写入)。</summary>
+        public async Task<bool> RenewAsync(TimeSpan ttl, CancellationToken ct = default)
+        {
+            var result = await redis.ScriptEvaluateAsync(RenewScript,
+                keys: [(StackExchange.Redis.RedisKey)key],
+                values: [(StackExchange.Redis.RedisValue)token, (StackExchange.Redis.RedisValue)(long)ttl.TotalMilliseconds]);
+            return (long)result == 1;
+        }
     }
 
     /// <summary>SSS+资源审查修复:释放 L1 MemoryCache 与 Redis 多路复用器(停机无泄漏)。</summary>

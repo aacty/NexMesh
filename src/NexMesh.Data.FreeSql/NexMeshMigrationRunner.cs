@@ -8,9 +8,9 @@ using Microsoft.Extensions.Options;
 
 /// <summary>
 /// 迁移执行器:按源分组校验并应用。
-/// 部署约束:单实例执行语义——并发防护(SemaphoreSlim)仅限进程内;
-/// 多实例同时启动会竞争应用同一迁移,记录表唯一索引将使后提交实例启动失败(fail-fast)。
-/// 滚动部署场景请先完成迁移实例再扩容(或确保仅一个实例执行迁移),分布式锁为后续版本计划。
+/// 部署约束:分布式锁已交付——容器注册 IConnectionMultiplexer 即 Redis 租约锁(IMigrationLock,多实例安全);
+/// 无 Redis 时 Noop 锁,退化为单实例执行语义:多实例并发启动会竞争应用同一迁移,记录表 (source,version)
+/// 唯一索引使后提交实例启动失败(fail-fast)——滚动部署请先完成迁移实例再扩容。
 /// 事务语义:每条迁移 BeginTransaction → UpAsync → 写记录 → Commit,失败 Rollback 并抛出(fail-fast);
 /// 单源内顺序执行(单例 IFreeSql 上的事务不并发),多源之间同样顺序(启动期一次性完成)。
 /// 防篡改:同 Version 迁移的指纹(Checksum)与历史记录不一致 → 启动报错,已发布迁移不可修改。
