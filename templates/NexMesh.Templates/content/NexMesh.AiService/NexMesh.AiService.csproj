@@ -10,10 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NexMesh.Host" Version="0.0.4" />
-    <PackageReference Include="NexMesh.AI.Approval" Version="0.0.4" />
-    <PackageReference Include="NexMesh.Auth" Version="0.0.4" />
-    <PackageReference Include="NexMesh.AI.Workflow" Version="0.0.4" />
+    <PackageReference Include="NexMesh.Host" Version="0.0.5" />
+    <PackageReference Include="NexMesh.AI.Approval" Version="0.0.5" />
+    <PackageReference Include="NexMesh.Auth" Version="0.0.5" />
+    <PackageReference Include="NexMesh.AI.Workflow" Version="0.0.5" />
     <PackageReference Include="FreeSql.Provider.Sqlite" Version="3.5.311" />
   </ItemGroup>
 

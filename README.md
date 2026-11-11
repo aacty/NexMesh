@@ -5,9 +5,9 @@
 **你只写业务逻辑,框架处理其余一切**
 
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](https://dotnet.microsoft.com)
-[![Tests](https://img.shields.io/badge/tests-307%20passed-brightgreen?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-602%20passed-brightgreen?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)](LICENSE)
-[![Packages](https://img.shields.io/badge/NuGet-0.0.4-purple?style=flat-square)](https://www.nuget.org/packages?q=NexMesh)
+[![Packages](https://img.shields.io/badge/NuGet-0.0.5-purple?style=flat-square)](https://www.nuget.org/packages?q=NexMesh)
 
 用 .NET 写后端:接口、登录、数据库、缓存、定时任务、AI 对接——
 传统要配十几样东西,NexMesh 里**大部分只写一行或一个标注**。
@@ -80,7 +80,7 @@ cd MyApp && dotnet run
 
 ```bash
 dotnet new web -n MyApp && cd MyApp
-dotnet add package NexMesh.Host --version 0.0.4
+dotnet add package NexMesh.Host --version 0.0.5
 ```
 
 创建 `appsettings.json`:
@@ -240,7 +240,7 @@ NexMesh.Host               ← 业务项目只引这一个
 
 ## 项目状态
 
-**已发布 [NuGet.org](https://www.nuget.org/packages?q=NexMesh)(0.0.4)**:`dotnet add package NexMesh.Host` 即用。
+**已发布 [NuGet.org](https://www.nuget.org/packages?q=NexMesh)(v0.0.5,12 包)**:`dotnet add package NexMesh.Host` 即用。
 
 ### ✅ 已交付(28 项能力)
 
@@ -319,7 +319,7 @@ NexMesh.Host               ← 业务项目只引这一个
 | 弹性 | Polly 8.8 |
 | 调度 | Cronos 0.13 |
 | Excel | MiniExcel 1.46 |
-| 测试 | xUnit 2.9(307 项 + 依赖规则/API 基线/性能基准) |
+| 测试 | xUnit 2.9(602 项 + 依赖规则/API 基线(12 包全守护)/性能基准) |
 
 ---
 
